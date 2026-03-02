@@ -1,7 +1,7 @@
 #!/bin/sh
 
 ## From https://ftp.gnu.org/gnu/binutils/binutils-2.17.tar.bz2
-## `gprof` dir removed.
+## Removed: `gprof/`
 ## Also requierd obj-c package
 ## Additional params to build with gcc-13
 
@@ -10,7 +10,7 @@
 #CFLAGS="-g -O2 -fcommon" ../binutils-2.17/configure --prefix=/opt/9fdev/_XLAM/binut217 --disable-werror
 
 make clean
-./configure --prefix=/opt/9fdev/_XLAM/binut217 --disable-werror
- make -j$(nproc) CFLAGS="-g -O2 -fcommon"
- make install
+CFLAGS="-g -O2 -fcommon" ./configure --prefix=/opt/9fdev/binut217 --disable-werror
+MAKEINFO=true make -j$(nproc) all-binutils all-gas all-ld
+make install
 

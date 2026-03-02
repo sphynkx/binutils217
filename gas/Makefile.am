@@ -540,6 +540,8 @@ ecoff.o : ecoff.c ecoff.h $(INCDIR)/coff/internal.h $(INCDIR)/coff/sym.h \
 # We need all these explicit rules for the multi stuff.  Because of
 # these rules, we don't need one for OBJ_FORMAT_O.
 
+obj-plan9.o : $(srcdir)/config/obj-plan9.c
+	$(COMPILE) -c $(srcdir)/config/obj-plan9.c
 obj-aout.o : $(srcdir)/config/obj-aout.c
 	$(COMPILE) -c $(srcdir)/config/obj-aout.c
 obj-coff.o: $(srcdir)/config/obj-coff.c
