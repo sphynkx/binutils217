@@ -101,7 +101,8 @@ OBJ_FORMATS = \
 	ecoff \
 	elf \
 	evax \
-	ieee
+	ieee \
+	plan9
 
 # This is an sh case which sets valid according to whether the CPU
 # type in the shell variable c and the OS type in the shell variable o
@@ -335,6 +336,7 @@ OBJ_FORMAT_CFILES = \
 	config/obj-elf.c \
 	config/obj-evax.c \
 	config/obj-ieee.c \
+	config/obj-plan9.c \
 	config/obj-som.c
 
 OBJ_FORMAT_HFILES = \
@@ -344,6 +346,7 @@ OBJ_FORMAT_HFILES = \
 	config/obj-elf.h \
 	config/obj-evax.h \
 	config/obj-ieee.h \
+	config/obj-plan9.h \
 	config/obj-som.h
 
 # Emulation header files in config
