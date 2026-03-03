@@ -571,6 +571,7 @@ BFD32_BACKENDS = \
 	pe-mips.lo \
 	pei-mips.lo \
 	peigen.lo \
+	plan9-i386.lo \
 	ppcboot.lo \
 	reloc16.lo \
 	riscix.lo \
@@ -742,6 +743,7 @@ BFD32_BACKENDS_CFILES = \
 	pei-sh.c \
 	pe-mips.c \
 	pei-mips.c \
+	plan9-i386.c \
 	ppcboot.c \
 	reloc16.c \
 	riscix.c \

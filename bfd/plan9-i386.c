@@ -722,3 +722,4 @@ const bfd_target MY(vec) =
 
   (PTR) MY_backend_data
 };
+

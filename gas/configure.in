@@ -451,6 +451,14 @@ if test ! -r ${srcdir}/config/tc-${target_cpu_type}.c; then
   AC_MSG_ERROR(GAS does not support target CPU ${target_cpu_type})
 fi
 
+# Plan 9 uses the plan9 object backend implementation.
+# Some targets may select fmt=plan9aout and propagate it into obj_format.
+case "${obj_format}" in
+  plan9aout)
+    obj_format=plan9
+    ;;
+esac
+
 if test ! -r ${srcdir}/config/obj-${obj_format}.c; then
   AC_MSG_ERROR(GAS does not have support for object file format ${obj_format})
 fi
@@ -507,6 +515,7 @@ if test `set . $formats ; shift ; echo $#` -gt 1 ; then
     case $fmt in
       aout)	AC_DEFINE(OBJ_MAYBE_AOUT, 1,    [a.out support?])   ;;
       bout)	AC_DEFINE(OBJ_MAYBE_BOUT, 1,    [b.out support?])   ;;
+      plan9aout)	AC_DEFINE(OBJ_MAYBE_AOUT, 1,    [a.out support?])   ;;
       coff)	AC_DEFINE(OBJ_MAYBE_COFF, 1,    [COFF support?])    ;;
       ecoff)	AC_DEFINE(OBJ_MAYBE_ECOFF, 1,   [ECOFF support?])   ;;
       elf)	AC_DEFINE(OBJ_MAYBE_ELF, 1,     [ELF support?])     ;;
