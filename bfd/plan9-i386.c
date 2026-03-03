@@ -26,8 +26,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 #define	DEFAULT_ARCH	bfd_arch_i386
 #define	DEFAULT_MID 	M_386
 
-#define MY(OP) CAT(plan9_i386_,OP)
 #define TARGETNAME "plan9-i386"
+
+/* Avoid macro name collisions with other headers.  */
+/* aout-target.h expects a macro MY(x) that prefixes symbols for this backend. */
+#undef CAT
+#undef MY
+#define P9_CAT(a,b) a##b
+#define MY(OP) P9_CAT(plan9_i386_, OP)
+
 
 /* This is the normal load address for executables.  */
 #define TEXT_START_ADDR		TARGET_PAGE_SIZE
@@ -47,6 +54,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 #include "libbfd.h"
 #include "libaout.h"
 
+/* Binutils 2.17 uses bfd_boolean and TRUE/FALSE.  */
+#define boolean bfd_boolean
+#ifndef true
+# define true TRUE
+#endif
+#ifndef false
+# define false FALSE
+#endif
+
 #define MY_symbol_leading_char '\0'
 
 #define MY_BFD_TARGET
@@ -55,15 +71,42 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 //#define MY_get_symtab_upper_bound plan9_i386_get_symtab_upper_bound
 //#define MY_get_symtab plan9_i386_get_symtab
 
-static boolean MY(write_dynamic_symbol)
-  PARAMS ((bfd *, struct bfd_link_info *, struct aout_link_hash_entry *));
+/* Plan 9 uses static linking.  Disable/ignore dynamic-link related hooks.  */
 
-static boolean MY(add_one_symbol)
-  PARAMS ((struct bfd_link_info *, bfd *, const char *, flagword, asection *, bfd_vma, const char *, boolean,
-		boolean, struct bfd_link_hash_entry **));
+/* Plan 9 uses static linking; ignore dynamic-link related hooks.  */
 
-static boolean MY(finish_dynamic_link)
-  PARAMS ((bfd *, struct bfd_link_info *));
+static bfd_boolean
+MY (add_one_symbol) (struct bfd_link_info *info,
+                     struct aout_link_hash_entry *h,
+                     const char *name,
+                     flagword flags,
+                     asection *section,
+                     bfd_vma value,
+                     bfd_boolean copy,
+                     bfd_boolean collect,
+                     struct bfd_link_hash_entry **hashp)
+{
+  (void) info; (void) h; (void) name; (void) flags; (void) section;
+  (void) value; (void) copy; (void) collect; (void) hashp;
+  return TRUE;
+}
+
+static bfd_boolean
+MY (write_dynamic_symbol) (bfd *output_bfd,
+                           struct bfd_link_info *info,
+                           struct aout_link_hash_entry *h)
+{
+  (void) output_bfd; (void) info; (void) h;
+  return TRUE;
+}
+
+static bfd_boolean
+MY (finish_dynamic_link) (bfd *output_bfd, struct bfd_link_info *info)
+{
+  (void) output_bfd; (void) info;
+  return TRUE;
+}
+
 
 #define	N_BADMAG(x) (N_MAGIC(x) != QMAGIC && N_MAGIC(x) != OMAGIC)
 #define	MY_backend_data &MY(backend_data)
@@ -94,8 +137,10 @@ static CONST struct aout_backend_data MY(backend_data) = {
    file header only. */
 
 static boolean
-MY(write_object_contents) (abfd)
+MY(write_object_contents) (bfd *abfd)
+/*
      bfd *abfd;
+*/
 {
 	struct external_exec exec_bytes;
 	struct internal_exec *execp = exec_hdr (abfd);
@@ -145,10 +190,14 @@ MY(write_object_contents) (abfd)
 /* Finish up the reading of an a.out file header */
 
 static const bfd_target *
-some_plan9_object_p (abfd, execp, callback_to_real_object_p)
+some_plan9_object_p (bfd *abfd,
+                     struct internal_exec *execp,
+                     const bfd_target *(*callback_to_real_object_p) (bfd *))
+/*
      bfd *abfd;
      struct internal_exec *execp;
      const bfd_target *(*callback_to_real_object_p) PARAMS ((bfd *));
+*/
 {
 	struct aout_data_struct *rawptr, *oldrawptr;
 	const bfd_target *result;
@@ -199,8 +248,8 @@ some_plan9_object_p (abfd, execp, callback_to_real_object_p)
 	if (! NAME(aout,make_sections) (abfd))
 		return NULL;
 
-	obj_datasec (abfd)->_raw_size = execp->a_data;
-	obj_bsssec (abfd)->_raw_size = execp->a_bss;
+	obj_datasec (abfd)->rawsize = execp->a_data;
+	obj_bsssec (abfd)->rawsize = execp->a_bss;
 
 	obj_textsec (abfd)->flags =
 		(execp->a_trsize != 0
@@ -231,7 +280,7 @@ some_plan9_object_p (abfd, execp, callback_to_real_object_p)
 
 	if (execp->a_entry != 0
 		|| (execp->a_entry >= obj_textsec(abfd)->vma
-			&& execp->a_entry < obj_textsec(abfd)->vma + obj_textsec(abfd)->_raw_size))
+			&& execp->a_entry < obj_textsec(abfd)->vma + obj_textsec(abfd)->rawsize))
 	abfd->flags |= EXEC_P;
 #ifdef STAT_FOR_EXEC
 	else {
@@ -266,11 +315,16 @@ some_plan9_object_p (abfd, execp, callback_to_real_object_p)
 	return result;
 }
 
+/*
 static const bfd_target *MY(object_p) PARAMS ((bfd *));
+*/
+static const bfd_target *MY (object_p) (bfd *abfd);
 
 static const bfd_target *
-MY(object_p) (abfd)
+MY(object_p) (bfd *abfd)
+/*
      bfd *abfd;
+*/
 {
 	struct external_exec exec_bytes;	/* Raw exec header from file */
 	struct internal_exec exec;		/* Cleaned-up exec header */
@@ -296,12 +350,14 @@ MY(object_p) (abfd)
 }
 
 static boolean
-putsym(abfd, type, prefix, name, value)
+putsym(bfd *abfd, int type, char *prefix, char *name, bfd_vma value)
+/*
 	bfd *abfd;
 	int type;
 	char *prefix;
 	char *name;
 	bfd_vma value;
+*/
 {
 	int n;
 	char buf[5];
@@ -331,241 +387,12 @@ putsym(abfd, type, prefix, name, value)
 	return true;
 }
 
+
+static boolean
+MY(slurp_symbol_table) (bfd *abfd)
 /*
- *	Totally evil hack alert!  We use MY(write_dynamic_symbol) and MY(finish_dynamic_link)
- *	to subvert aoutx.h into generating a Plan 9 symbol table instead of the a.out one.
- *	MY(add_one_symbol) is used to set the "written" flag on symbols so that externals
- *	only occur once.
- */
-static boolean
-MY(write_dynamic_symbol) (output_bfd, info, h)
-     bfd *output_bfd;
-     struct bfd_link_info *info;
-     struct aout_link_hash_entry *h;
-{
-	int type;
-	bfd_vma val;
-	asection *sec;
-
-	if (h->written)
-		return true;
-
-	h->written = true;
-
-	/* An indx of -2 means the symbol must be written.  */
-	if (h->indx != -2
-		&& (info->strip == strip_all
-		|| (info->strip == strip_some
-		&& bfd_hash_lookup (info->keep_hash, h->root.root.string,
-				false, false) == NULL)))
-		return true;
-	switch (h->root.type) {
-	default:
-		abort ();
-		return true;
-	case bfd_link_hash_new:
-		/* This can happen for set symbols when sets are not being
-			built.  */
-		return true;
-	case bfd_link_hash_defined:
-	case bfd_link_hash_defweak:
-		sec = h->root.u.def.section->output_section;
-		BFD_ASSERT (bfd_is_abs_section (sec) || sec->owner == output_bfd);
-		if (sec == obj_textsec (output_bfd))
-			type = 'T';
-		else if (sec == obj_datasec (output_bfd))
-			type = 'D';
-		else if (sec == obj_bsssec (output_bfd))
-			type = 'B';
-		else
-			return true;
-		val = (h->root.u.def.value + sec->vma + h->root.u.def.section->output_offset);
-		break;
-	case bfd_link_hash_common:
-		type = N_UNDF | N_EXT;
-		val = h->root.u.c.size;
-//		break;
-	case bfd_link_hash_undefweak:
-	case bfd_link_hash_undefined:
-		return true;
-	case bfd_link_hash_indirect:
-	case bfd_link_hash_warning:
-		/* FIXME: Ignore these for now.  The circumstances under which
-			they should be written out are not clear to me.  */
-		return true;
-	}
-	if(!putsym(output_bfd, type, 0, h->root.root.string, val))
-		return false;
-	h->indx = obj_aout_external_sym_count (output_bfd)-1;
-	return true;
-}
-
-static boolean
-MY(add_one_symbol) (info, abfd, name, flags, section, value, string, copy, collect, hashp)
-	struct bfd_link_info *info;
-	 bfd *abfd;
-	const char *name;
-	flagword flags;
-	asection *section;
-	bfd_vma value;
-	const char *string;
-	boolean copy;
-	boolean collect;
-	struct bfd_link_hash_entry **hashp;
-{
-	struct aout_link_hash_entry **h;
-
-	if(!_bfd_generic_link_add_one_symbol(info, abfd, name, flags, section, value, string, copy, collect, hashp))
-		return false;
-	h = (struct aout_link_hash_entry **)hashp;
-	(*h)->written = true;
-	return true;
-}
-
-/*
- *	BUG: this should do a  lot more; see aout_link_write_symbols()
- */
-static boolean
-MY(finish_dynamic_link) (abfd, info)
      bfd *abfd;
-     struct bfd_link_info *info;
-{
-	asection *o, *isec, *osec;
-	struct bfd_link_order *p;
-	bfd *ibfd;
-	struct external_nlist *s, *es;
-	int type, other, desc, defd;
-	bfd_vma value;
-	char *strings, *name, prefix[64];
-	struct aout_link_hash_entry **sym_hash, *h, *hresolve;
-
-	for (o = abfd->sections; o != (asection *) NULL; o = o->next) {
-		for (p = o->link_order_head; p != NULL; p = p->next) {
-			if (p->type != bfd_indirect_link_order)
-				continue;
-			ibfd = p->u.indirect.section->owner;
-			if(ibfd->output_has_begun)
-				continue;
-			if (bfd_get_flavour(ibfd) != bfd_target_plan9_flavour)
-				continue;
-
-			/* write a symbol for this object file XXX STRIP???*/
-			isec = obj_textsec(ibfd);
-			osec = isec->output_section;
-			value = bfd_get_section_vma (abfd, osec) + isec->output_offset;
-			if(!putsym(abfd, 't', 0, ibfd->filename, value))
-				return false;
-
-			s = obj_aout_external_syms(ibfd);
-			es = s + obj_aout_external_sym_count(ibfd);
-			strings = obj_aout_external_strings(ibfd);
-			sym_hash = obj_aout_sym_hashes(ibfd);
-			for (; s < es; s++, sym_hash++) {
-				name = strings + GET_WORD (ibfd, s->e_strx);
-				type = bfd_h_get_8 (ibfd, s->e_type);
-				value = GET_WORD (ibfd, s->e_value);
-				h = *sym_hash;
-				if(h != NULL)
-					name = h->root.root.string;
-				hresolve = h;
-				if((type&N_TYPE) == N_TEXT || type == N_WEAKT || type == N_LBRAC || type == N_RBRAC)
-					isec = obj_textsec(ibfd);
-				else if((type&N_TYPE) == N_DATA || type == N_WEAKD)
-					isec = obj_datasec(ibfd);
-				else if((type&N_TYPE) == N_BSS || type == N_WEAKB)
-					isec = obj_bsssec(ibfd);
-				else if((type&N_TYPE) == N_ABS || type == N_WEAKA)
-					isec = bfd_abs_section_ptr;
-				else if(h == NULL)
-					isec = NULL;	/* XXX */
-				else if(hresolve->root.type == bfd_link_hash_defined
-						|| hresolve->root.type == bfd_link_hash_defweak) {
-					isec = hresolve->root.u.def.section;
-					osec = isec->output_section;
-					value = hresolve->root.u.def.value + osec->vma + isec->output_offset;
-					type &=~ N_TYPE;
-					defd = (hresolve->root.type == bfd_link_hash_defined);
-					if(osec == obj_textsec(abfd)) {
-						if(defd)
-							type |= N_TEXT;
-						else
-							type |= N_WEAKT;
-					}
-					else if(osec == obj_datasec(abfd)) {
-						if(defd)
-							type |= N_DATA;
-						else
-							type |= N_WEAKD;
-					}
-					else if(osec == obj_bsssec(abfd)) {
-						if(defd)
-							type |= N_BSS;
-						else
-							type |= N_WEAKB;
-					}
-					else {
-						if(defd)
-							type |= N_ABS;
-						else
-							type |= N_WEAKA;
-					}
-					isec = NULL;
-				}
-				else
-					isec = NULL;
-				if(isec != NULL) {
-					osec = isec->output_section;
-					value += osec->vma - isec->vma + isec->output_offset;
-				}
-				switch(type) {
-				case N_TEXT:
-					if(!putsym(abfd, 't', 0, name, value))
-						return false;
-					break;
-				case N_TEXT | N_EXT:
-					if(!putsym(abfd, 'T', 0, name, value))
-						return false;
-					break;
-				case N_DATA:
-					if(!putsym(abfd, 'd', 0, name, value))
-						return false;
-					break;
-				case N_DATA | N_EXT:
-					if(!putsym(abfd, 'D', 0, name, value))
-						return false;
-					break;
-				case N_BSS:
-					if(!putsym(abfd, 'b', 0, name, value))
-						return false;
-					break;
-				case N_BSS | N_EXT:
-					if(!putsym(abfd, 'B', 0, name, value))
-						return false;
-					break;
-				case N_UNDF | N_EXT:
-					break;
-				default:
-					if((type&N_STAB) == 0)
-						break;
-					other = (int)bfd_h_get_8 (ibfd, s->e_other);
-					desc = (int)bfd_h_get_16 (ibfd, s->e_desc);
-					sprintf(prefix, "%2.2x%2.2x%4.4x", type, other, desc);
-					if(!putsym(abfd, 'X', prefix, name, value))
-						return false;
-					break;
-				}
-			}
-			ibfd->output_has_begun = true;
-		}
-	}
-
-	obj_aout_external_sym_count (abfd) = 0;	/* prevent writing of an empty stringtab */
-	return true;
-}
-
-static boolean
-MY(slurp_symbol_table) (abfd)
-     bfd *abfd;
+*/
 {
 	aout_symbol_type *cached;
 	size_t cached_size;
@@ -642,9 +469,11 @@ MY(slurp_symbol_table) (abfd)
 }
 
 long
-MY(get_symtab) (abfd, location)
+MY(get_symtab) (bfd *abfd, asymbol **location)
+/*
      bfd *abfd;
      asymbol **location;
+*/
 {
 	int i;
 	aout_symbol_type *s;
@@ -660,8 +489,10 @@ MY(get_symtab) (abfd, location)
 }
 
 long
-MY(get_symtab_upper_bound) (abfd)
+MY(get_symtab_upper_bound) (bfd *abfd)
+/*
      bfd *abfd;
+*/
 {
 	if (!MY(slurp_symbol_table)(abfd))
 		return -1;
@@ -674,7 +505,7 @@ MY(get_symtab_upper_bound) (abfd)
 const bfd_target MY(vec) =
 {
   TARGETNAME,		/* name */
-  bfd_target_plan9_flavour,
+  bfd_target_aout_flavour,
 #ifdef TARGET_IS_BIG_ENDIAN_P
   BFD_ENDIAN_BIG,		/* target byte order (big) */
 #else
