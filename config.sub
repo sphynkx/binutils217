@@ -1245,6 +1245,8 @@ case $os in
 	-linux*)
 		os=`echo $os | sed -e 's|linux|linux-gnu|'`
 		;;
+	-plan9* )
+		;;
 	-sunos5*)
 		os=`echo $os | sed -e 's|sunos5|solaris2|'`
 		;;
