@@ -1415,6 +1415,9 @@ epc532macha.c: $(srcdir)/emulparams/pc532macha.sh \
 epdp11.c: $(srcdir)/emulparams/pdp11.sh \
   $(srcdir)/emultempl/generic.em $(srcdir)/scripttempl/aout.sc ${GEN_DEPENDS}
 	${GENSCRIPTS} pdp11 "$(tdir_pdp11)"
+eplan9_i386.c: $(srcdir)/emulparams/plan9_i386.sh \
+  $(srcdir)/emultempl/generic.em $(srcdir)/scripttempl/plan9.sc ${GEN_DEPENDS}
+	${GENSCRIPTS} plan9_i386 "$(tdir_plan9_i386)"
 epjelf.c: $(srcdir)/emulparams/pjelf.sh \
   $(srcdir)/emultempl/elf32.em $(srcdir)/scripttempl/elf.sc ${GEN_DEPENDS}
 	${GENSCRIPTS} pjelf "$(tdir_pjelf)"

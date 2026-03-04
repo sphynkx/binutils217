@@ -8544,6 +8544,7 @@ install-etc: installdirs
 	@: $(MAKE); $(unstage)
 	@r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
+	@[ -f ./etc/Makefile ] || exit 0; \
 	$(HOST_EXPORTS) \
 	(cd $(HOST_SUBDIR)/etc && \
 	  $(MAKE) $(FLAGS_TO_PASS)  install)
