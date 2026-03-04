@@ -775,7 +775,7 @@ do
     pef_vec)                    tb="$tb pef.lo" ;;
     pef_xlib_vec)               tb="$tb pef.lo" ;;
     pdp11_aout_vec)		tb="$tb pdp11.lo" ;;
-    plan9_i386_vec)			tb="$tb plan9-i386.lo" ;;
+    plan9_i386_vec)			tb="$tb plan9-i386.lo aout32.lo aout0.lo" ;;
     pmac_xcoff_vec)		tb="$tb coff-rs6000.lo xcofflink.lo" ;;
     ppcboot_vec)		tb="$tb ppcboot.lo" ;;
     riscix_vec)			tb="$tb aout32.lo riscix.lo" ;;

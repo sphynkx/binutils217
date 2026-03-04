@@ -65,7 +65,111 @@ const segT N_TYPE_seg[N_TYPE + 2] =
   SEG_REGISTER,			/* dummy N_REGISTER for regs = 30 */
   SEG_GOOF,
 };
-#endif
+
+/* ------------------------------------------------------------------------- */
+/* Binutils 2.17 GAS expects S_* accessors as FUNCTIONS (see gas/symbols.h).
+   The original Plan 9 backend implemented these as macros in obj-plan9.h,
+   which breaks the prototypes in symbols.h.  We keep the old logic as
+   P9_* macros and implement the S_* API here.  */
+
+valueT
+S_GET_VALUE (symbolS *s)
+{
+  return s->sy_value.X_add_number;
+}
+
+void
+S_SET_VALUE (symbolS *s, valueT v)
+{
+  s->sy_value.X_add_number = v;
+}
+
+int
+S_IS_EXTERNAL (symbolS *s)
+{
+  return P9_S_IS_EXTERNAL (s) != 0;
+}
+
+int
+S_IS_COMMON (symbolS *s)
+{
+  return P9_S_IS_COMMON (s) != 0;
+}
+
+int
+S_IS_DEFINED (symbolS *s)
+{
+  return P9_S_IS_DEFINED (s) != 0;
+}
+
+int
+S_IS_DEBUG (symbolS *s)
+{
+  return P9_S_IS_DEBUG (s) != 0;
+}
+
+int
+S_IS_LOCAL (symbolS *s)
+{
+  return P9_S_IS_LOCAL (s) != 0;
+}
+
+int
+S_IS_STABD (symbolS *s)
+{
+  return P9_S_IS_STABD (s) != 0;
+}
+
+const char *
+S_GET_NAME (symbolS *s)
+{
+  return P9_S_GET_NAME (s);
+}
+
+segT
+S_GET_SEGMENT (symbolS *s)
+{
+  return P9_S_GET_SEGMENT (s);
+}
+
+void
+S_SET_SEGMENT (symbolS *s, segT seg)
+{
+  P9_S_SET_SEGMENT (s, seg);
+}
+
+void
+S_SET_EXTERNAL (symbolS *s)
+{
+  P9_S_SET_EXTERNAL (s);
+}
+
+void
+S_SET_NAME (symbolS *s, const char *v)
+{
+  P9_S_SET_NAME (s, v);
+}
+
+void
+S_CLEAR_EXTERNAL (symbolS *s)
+{
+  P9_S_CLEAR_EXTERNAL (s);
+}
+
+void
+S_SET_WEAK (symbolS *s)
+{
+  P9_S_SET_WEAK (s);
+}
+
+int
+S_IS_WEAK (symbolS *s)
+{
+  return P9_S_GET_WEAK (s) != 0;
+}
+/* ------------------------------------------------------------------------- */
+
+#endif /* !BFD_ASSEMBLER */
 
 static void obj_plan9_line PARAMS ((int));
 static void obj_plan9_weak PARAMS ((int));
@@ -208,7 +312,8 @@ obj_plan9_frob_file ()
      Since writing to a section will cause the BFD back end to compute the
      VMAs, fake it out here....  */
   bfd_byte b = 0;
-  boolean x = true;
+  bfd_boolean x = TRUE;
+
   if (bfd_section_size (stdoutput, text_section) != 0)
     {
       x = bfd_set_section_contents (stdoutput, text_section, &b, (file_ptr) 0,
@@ -219,7 +324,7 @@ obj_plan9_frob_file ()
       x = bfd_set_section_contents (stdoutput, data_section, &b, (file_ptr) 0,
 				    (bfd_size_type) 1);
     }
-  assert (x == true);
+  assert (x == TRUE);
 }
 
 #else /* ! BFD_ASSEMBLER */
@@ -341,7 +446,7 @@ obj_emit_symbols (where, symbol_rootP)
 	S_SET_EXTERNAL (symbolP);
 
       /* Adjust the type of a weak symbol.  */
-      if (S_GET_WEAK (symbolP))
+      if (S_IS_WEAK (symbolP))
 	{
 	  switch (S_GET_TYPE (symbolP))
 	    {
@@ -586,7 +691,6 @@ obj_pre_write_hook (headers)
   H_SET_DYNAMIC (headers, 0);
   H_SET_VERSION (headers, AOUT_VERSION);
   H_SET_MACHTYPE (headers, AOUT_MACHTYPE);
-//  tc_plan9_pre_write_hook (headers);
 }
 
 void
@@ -742,7 +846,7 @@ obj_plan9_separate_stab_sections ()
    definitions in obj-plan9.h.  */
 const struct format_ops plan9_format_ops =
 {
-  bfd_target_plan9_flavour,
+  bfd_target_aout_flavour,
   1,	/* dfl_leading_underscore */
   0,	/* emit_section_symbols */
   0,	/* begin */

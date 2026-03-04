@@ -28,7 +28,10 @@
 
 #include "bfd/libaout.h"
 
-#define OUTPUT_FLAVOR bfd_target_plan9_flavour
+/* binutils 2.17 does not have bfd_target_plan9_flavour; use a.out flavour.  */
+#ifndef OUTPUT_FLAVOR
+# define OUTPUT_FLAVOR bfd_target_aout_flavour
+#endif
 
 #else /* ! BFD_ASSEMBLER */
 
@@ -81,90 +84,94 @@ typedef struct nlist obj_symbol_type;	/* Symbol table entry */
 
 asection *text_section, *data_section, *bss_section;
 
-//#define obj_frob_symbol(S,PUNT)	obj_aout_frob_symbol (S, &PUNT)
-//#define obj_frob_file()		obj_aout_frob_file ()
-//extern void obj_aout_frob_symbol PARAMS ((symbolS *, int *));
-//extern void obj_aout_frob_file PARAMS ((void));
-
 #define obj_sec_sym_ok_for_reloc(SEC)	(1)
 
-#else
+#else /* !BFD_ASSEMBLER */
 
 /* We use the sy_obj field to record whether a symbol is weak.  */
 #define OBJ_SYMFIELD_TYPE char
 
 /*
- *  Macros to extract information from a symbol table entry.
- *  This syntaxic indirection allows independence regarding a.out or coff.
- *  The argument (s) of all these macros is a pointer to a symbol table entry.
+ * IMPORTANT (binutils 2.17 GAS compatibility):
+ *
+ * gas/symbols.h declares S_* accessors as FUNCTIONS (e.g. extern int
+ * S_IS_EXTERNAL(symbolS*);).  If we define S_* as macros here, those
+ * prototypes are macro-expanded and compilation breaks.
+ *
+ * Therefore:
+ *   - keep old macro logic as P9_* macros
+ *   - implement S_* API as real functions in obj-plan9.c
  */
 
 /* True if the symbol is external */
-#define S_IS_EXTERNAL(s)	((s)->sy_symbol.n_type & N_EXT)
+#define P9_S_IS_EXTERNAL(s)	((s)->sy_symbol.n_type & N_EXT)
 
 /* True if symbol has been defined, ie is in N_{TEXT,DATA,BSS,ABS} or N_EXT */
-#define S_IS_DEFINED(s) \
-  (S_GET_TYPE (s) != N_UNDF || S_GET_DESC (s) != 0)
+#define P9_S_IS_DEFINED(s) \
+  (P9_S_GET_TYPE (s) != N_UNDF || P9_S_GET_DESC (s) != 0)
 
-#define S_IS_COMMON(s) \
-  (S_GET_TYPE (s) == N_UNDF && S_GET_VALUE (s) != 0)
+#define P9_S_IS_COMMON(s) \
+  (P9_S_GET_TYPE (s) == N_UNDF && S_GET_VALUE (s) != 0)
 
-#define S_IS_REGISTER(s)	((s)->sy_symbol.n_type == N_REGISTER)
+#define P9_S_IS_REGISTER(s)	((s)->sy_symbol.n_type == N_REGISTER)
 
 /* True if a debug special symbol entry */
-#define S_IS_DEBUG(s)		((s)->sy_symbol.n_type & N_STAB)
+#define P9_S_IS_DEBUG(s)		((s)->sy_symbol.n_type & N_STAB)
+
 /* True if a symbol is local symbol name */
-#define S_IS_LOCAL(s) 					\
-  ((S_GET_NAME (s) 					\
-    && !S_IS_DEBUG (s) 					\
-    && (strchr (S_GET_NAME (s), '\001') != NULL		\
-        || strchr (S_GET_NAME (s), '\002') != NULL	\
+#define P9_S_IS_LOCAL(s) 					\
+  ((P9_S_GET_NAME (s) 					\
+    && !P9_S_IS_DEBUG (s) 					\
+    && (strchr (P9_S_GET_NAME (s), '\001') != NULL		\
+        || strchr (P9_S_GET_NAME (s), '\002') != NULL	\
         || (S_LOCAL_NAME(s) && !flag_keep_locals)))	\
    || (flag_strip_local_absolute			\
-       && ! S_IS_EXTERNAL(s)				\
-       && S_GET_SEGMENT (s) == absolute_section))
+       && ! P9_S_IS_EXTERNAL(s)				\
+       && P9_S_GET_SEGMENT (s) == absolute_section))
+
 /* True if a symbol is not defined in this file */
-#define S_IS_EXTERN(s)		((s)->sy_symbol.n_type & N_EXT)
+#define P9_S_IS_EXTERN(s)		((s)->sy_symbol.n_type & N_EXT)
+
 /* True if the symbol has been generated because of a .stabd directive */
-#define S_IS_STABD(s)		(S_GET_NAME(s) == (char *)0)
+#define P9_S_IS_STABD(s)		(P9_S_GET_NAME(s) == (char *)0)
 
 /* Accessors */
 /* The name of the symbol */
-#define S_GET_NAME(s)		((s)->sy_symbol.n_un.n_name)
+#define P9_S_GET_NAME(s)		((s)->sy_symbol.n_un.n_name)
 /* The pointer to the string table */
-#define S_GET_OFFSET(s)		((s)->sy_symbol.n_un.n_strx)
+#define P9_S_GET_OFFSET(s)		((s)->sy_symbol.n_un.n_strx)
 /* The type of the symbol */
-#define S_GET_TYPE(s)		((s)->sy_symbol.n_type & N_TYPE)
+#define P9_S_GET_TYPE(s)		((s)->sy_symbol.n_type & N_TYPE)
 /* The numeric value of the segment */
-#define S_GET_SEGMENT(s)	(N_TYPE_seg[S_GET_TYPE(s)])
+#define P9_S_GET_SEGMENT(s)		(N_TYPE_seg[P9_S_GET_TYPE(s)])
 /* The n_other expression value */
-#define S_GET_OTHER(s)		((s)->sy_symbol.n_other)
+#define P9_S_GET_OTHER(s)		((s)->sy_symbol.n_other)
 /* The n_desc expression value */
-#define S_GET_DESC(s)		((s)->sy_symbol.n_desc)
+#define P9_S_GET_DESC(s)		((s)->sy_symbol.n_desc)
 /* Whether the symbol is weak.  */
-#define S_GET_WEAK(s)		((s)->sy_obj)
+#define P9_S_GET_WEAK(s)		((s)->sy_obj)
 
 /* Modifiers */
 /* Assume that a symbol cannot be simultaneously in more than on segment */
 /* set segment */
-#define S_SET_SEGMENT(s,seg)	((s)->sy_symbol.n_type &= ~N_TYPE,(s)->sy_symbol.n_type|=SEGMENT_TO_SYMBOL_TYPE(seg))
+#define P9_S_SET_SEGMENT(s,seg)	((s)->sy_symbol.n_type &= ~N_TYPE,(s)->sy_symbol.n_type|=SEGMENT_TO_SYMBOL_TYPE(seg))
 /* The symbol is external */
-#define S_SET_EXTERNAL(s)	((s)->sy_symbol.n_type |= N_EXT)
+#define P9_S_SET_EXTERNAL(s)	((s)->sy_symbol.n_type |= N_EXT)
 /* The symbol is not external */
-#define S_CLEAR_EXTERNAL(s)	((s)->sy_symbol.n_type &= ~N_EXT)
+#define P9_S_CLEAR_EXTERNAL(s)	((s)->sy_symbol.n_type &= ~N_EXT)
 /* Set the name of the symbol */
-#define S_SET_NAME(s,v)		((s)->sy_symbol.n_un.n_name = (v))
+#define P9_S_SET_NAME(s,v)	((s)->sy_symbol.n_un.n_name = (v))
 /* Set the offset in the string table */
-#define S_SET_OFFSET(s,v)	((s)->sy_symbol.n_un.n_strx = (v))
+#define P9_S_SET_OFFSET(s,v)	((s)->sy_symbol.n_un.n_strx = (v))
 /* Set the n_type field */
-#define S_SET_TYPE(s,t)		((s)->sy_symbol.n_type = (t))
+#define P9_S_SET_TYPE(s,t)	((s)->sy_symbol.n_type = (t))
 /* Set the n_other expression value */
-#define S_SET_OTHER(s,v)	((s)->sy_symbol.n_other = (v))
+#define P9_S_SET_OTHER(s,v)	((s)->sy_symbol.n_other = (v))
 /* Set the n_desc expression value */
-#define S_SET_DESC(s,v)		((s)->sy_symbol.n_desc = (v))
+#define P9_S_SET_DESC(s,v)	((s)->sy_symbol.n_desc = (v))
 /* Mark the symbol as weak.  This causes n_type to be adjusted when
    the symbol is written out.  */
-#define S_SET_WEAK(s)		((s)->sy_obj = 1)
+#define P9_S_SET_WEAK(s)	((s)->sy_obj = 1)
 
 /* File header macro and type definition */
 
@@ -240,7 +247,7 @@ object_headers;
 struct fix;
 void tc_plan9_fix_to_chars PARAMS ((char *where, struct fix *fixP, relax_addressT segment_address));
 
-#endif
+#endif /* ! BFD_ASSEMBLER */
 
 #define obj_read_begin_hook()	{;}
 #define obj_symbol_new_hook(s)	{;}

@@ -490,14 +490,13 @@ BFDVER_H = @BFDVER_H@
 
 $(OBJS): @ALL_OBJ_DEPS@
 
-as_new_SOURCES = $(GAS_CFILES)
+# a compile rule for obj-@obj_format@.o from $(srcdir)/config/obj-@obj_format@.c.
+as_new_SOURCES = $(GAS_CFILES) $(OBJ_FORMAT_C)
 as_new_LDADD = $(TARG_CPU_O) $(OBJ_FORMAT_O) $(ATOF_TARG_O) \
 	$(extra_objects) $(GASLIBS) $(INTLLIBS) $(LIBM)
 as_new_DEPENDENCIES = $(TARG_CPU_O) $(OBJ_FORMAT_O) $(ATOF_TARG_O) \
 	$(extra_objects) $(GASLIBS) $(INTLDEPS)
 
-# Stuff that every object file depends upon.  If anything is removed
-# from this list, remove it from dep-in.sed as well.
 $(OBJS): $(INCDIR)/bin-bugs.h $(INCDIR)/ansidecl.h $(INCDIR)/libiberty.h \
 	$(INCDIR)/progress.h $(INCDIR)/fopen-same.h \
 	$(OBJ_FORMAT_H) $(TARG_CPU_H) $(TARG_ENV_H) \
@@ -2478,6 +2477,11 @@ e-mipsecoff.o: $(srcdir)/config/e-mipsecoff.c $(INCDIR)/symcat.h \
   emul-target.h
 e-mipself.o: $(srcdir)/config/e-mipself.c $(INCDIR)/symcat.h \
   emul-target.h
+
+$(OBJ_FORMAT_O): $(OBJ_FORMAT_C) $(OBJ_FORMAT_H)
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
+		$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o $@ $(OBJ_FORMAT_C)
+
 $(OBJS): $(DEP_@target_cpu_type@_@obj_format@)
 $(TARG_CPU_O): $(DEPTC_@target_cpu_type@_@obj_format@)
 $(OBJ_FORMAT_O): $(DEPOBJ_@target_cpu_type@_@obj_format@)

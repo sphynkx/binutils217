@@ -73,7 +73,7 @@ am__objects_1 = app.$(OBJEXT) as.$(OBJEXT) atof-generic.$(OBJEXT) \
 	stabs.$(OBJEXT) subsegs.$(OBJEXT) symbols.$(OBJEXT) \
 	write.$(OBJEXT)
 am_as_new_OBJECTS = $(am__objects_1)
-as_new_OBJECTS = $(am_as_new_OBJECTS)
+as_new_OBJECTS = $(am_as_new_OBJECTS) $(TARG_CPU_O) $(OBJ_FORMAT_O) $(ATOF_TARG_O)
 am__DEPENDENCIES_1 = tc-@target_cpu_type@.o
 am__DEPENDENCIES_2 = obj-@obj_format@.o
 am__DEPENDENCIES_3 = atof-@atof@.o
@@ -332,8 +332,8 @@ OBJ_FORMATS = \
 	ecoff \
 	elf \
 	evax \
-	ieee
-
+	ieee \
+	plan9
 
 # This is an sh case which sets valid according to whether the CPU
 # type in the shell variable c and the OS type in the shell variable o
@@ -692,18 +692,23 @@ DEP_FLAGS = -DOBJ_MAYBE_ELF \
 	-I. -I.. -I$${srcdir} -I../../bfd $(DEP_INCLUDES)
 
 
-# How to link with both our special library facilities
-# and the system's installed libraries.
-GASLIBS = @OPCODES_LIB@ @BFDLIB@ ../libiberty/libiberty.a
-
-# Files to be copied away after each stage in building.
-STAGESTUFF = *.o $(noinst_PROGRAMS)
-as_new_SOURCES = $(GAS_CFILES)
+# a compile rule for obj-@obj_format@.o from $(srcdir)/config/obj-@obj_format@.c.
+as_new_SOURCES = $(GAS_CFILES) $(OBJ_FORMAT_C)
 as_new_LDADD = $(TARG_CPU_O) $(OBJ_FORMAT_O) $(ATOF_TARG_O) \
 	$(extra_objects) $(GASLIBS) $(INTLLIBS) $(LIBM)
-
 as_new_DEPENDENCIES = $(TARG_CPU_O) $(OBJ_FORMAT_O) $(ATOF_TARG_O) \
 	$(extra_objects) $(GASLIBS) $(INTLDEPS)
+
+$(OBJS): $(INCDIR)/bin-bugs.h $(INCDIR)/ansidecl.h $(INCDIR)/libiberty.h \
+	$(INCDIR)/progress.h $(INCDIR)/fopen-same.h \
+	$(OBJ_FORMAT_H) $(TARG_CPU_H) $(TARG_ENV_H) \
+	as.h asintl.h bignum.h bit_fix.h config.h emul.h expr.h flonum.h \
+	frags.h hash.h listing.h obj.h read.h symbols.h tc.h write.h
+
+EXPECT = expect
+RUNTEST = runtest
+RUNTESTFLAGS=
+
 
 EXPECT = expect
 RUNTEST = runtest
@@ -3379,6 +3384,11 @@ e-mipsecoff.o: $(srcdir)/config/e-mipsecoff.c $(INCDIR)/symcat.h \
   emul-target.h
 e-mipself.o: $(srcdir)/config/e-mipself.c $(INCDIR)/symcat.h \
   emul-target.h
+
+$(OBJ_FORMAT_O): $(OBJ_FORMAT_C) $(OBJ_FORMAT_H)
+	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
+		$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o $@ $(OBJ_FORMAT_C)
+
 $(OBJS): $(DEP_@target_cpu_type@_@obj_format@)
 $(TARG_CPU_O): $(DEPTC_@target_cpu_type@_@obj_format@)
 $(OBJ_FORMAT_O): $(DEPOBJ_@target_cpu_type@_@obj_format@)
