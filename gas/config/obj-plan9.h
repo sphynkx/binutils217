@@ -24,35 +24,12 @@
 
 #include "targ-cpu.h"
 
-#ifdef BFD_ASSEMBLER
-
 #include "bfd/libaout.h"
 
 /* binutils 2.17 does not have bfd_target_plan9_flavour; use a.out flavour.  */
 #ifndef OUTPUT_FLAVOR
 # define OUTPUT_FLAVOR bfd_target_aout_flavour
 #endif
-
-#else /* ! BFD_ASSEMBLER */
-
-#ifndef VMS
-#include "aout_gnu.h"		/* Needed to define struct nlist. Sigh.  */
-#else
-#include "a_out.h"
-#endif
-
-#ifndef AOUT_MACHTYPE
-#define AOUT_MACHTYPE 0
-#endif /* AOUT_MACHTYPE */
-
-extern const short seg_N_TYPE[];
-extern const segT N_TYPE_seg[];
-
-#ifndef DEFAULT_MAGIC_NUMBER_FOR_OBJECT_FILE
-#define DEFAULT_MAGIC_NUMBER_FOR_OBJECT_FILE	(OMAGIC)
-#endif /* DEFAULT_MAGIC_NUMBER_FOR_OBJECT_FILE */
-
-#endif /* ! BFD_ASSEMBLER */
 
 extern const pseudo_typeS aout_pseudo_table[];
 
@@ -62,19 +39,19 @@ extern const pseudo_typeS aout_pseudo_table[];
 
 /* SYMBOL TABLE */
 /* Symbol table entry data type */
-
 typedef struct nlist obj_symbol_type;	/* Symbol table entry */
 
 /* Symbol table macros and constants */
 
-#ifdef BFD_ASSEMBLER
-
+/* These accessors are format-specific and are used in places where
+   the generic symbols.h API does not provide a function variant.  */
 #define S_SET_OTHER(S,V) \
   (aout_symbol (symbol_get_bfdsym (S))->other = (V))
 #define S_SET_TYPE(S,T) \
   (aout_symbol (symbol_get_bfdsym (S))->type = (T))
 #define S_SET_DESC(S,D)	\
   (aout_symbol (symbol_get_bfdsym (S))->desc = (D))
+
 #define S_GET_OTHER(S) \
   (aout_symbol (symbol_get_bfdsym (S))->other)
 #define S_GET_TYPE(S) \
@@ -82,172 +59,11 @@ typedef struct nlist obj_symbol_type;	/* Symbol table entry */
 #define S_GET_DESC(S) \
   (aout_symbol (symbol_get_bfdsym (S))->desc)
 
+/* These are provided by GAS; some backends declare them here.  Keep as in-tree
+   convention with other a.out-ish formats.  */
 asection *text_section, *data_section, *bss_section;
 
 #define obj_sec_sym_ok_for_reloc(SEC)	(1)
-
-#else /* !BFD_ASSEMBLER */
-
-/* We use the sy_obj field to record whether a symbol is weak.  */
-#define OBJ_SYMFIELD_TYPE char
-
-/*
- * IMPORTANT (binutils 2.17 GAS compatibility):
- *
- * gas/symbols.h declares S_* accessors as FUNCTIONS (e.g. extern int
- * S_IS_EXTERNAL(symbolS*);).  If we define S_* as macros here, those
- * prototypes are macro-expanded and compilation breaks.
- *
- * Therefore:
- *   - keep old macro logic as P9_* macros
- *   - implement S_* API as real functions in obj-plan9.c
- */
-
-/* True if the symbol is external */
-#define P9_S_IS_EXTERNAL(s)	((s)->sy_symbol.n_type & N_EXT)
-
-/* True if symbol has been defined, ie is in N_{TEXT,DATA,BSS,ABS} or N_EXT */
-#define P9_S_IS_DEFINED(s) \
-  (P9_S_GET_TYPE (s) != N_UNDF || P9_S_GET_DESC (s) != 0)
-
-#define P9_S_IS_COMMON(s) \
-  (P9_S_GET_TYPE (s) == N_UNDF && S_GET_VALUE (s) != 0)
-
-#define P9_S_IS_REGISTER(s)	((s)->sy_symbol.n_type == N_REGISTER)
-
-/* True if a debug special symbol entry */
-#define P9_S_IS_DEBUG(s)		((s)->sy_symbol.n_type & N_STAB)
-
-/* True if a symbol is local symbol name */
-#define P9_S_IS_LOCAL(s) 					\
-  ((P9_S_GET_NAME (s) 					\
-    && !P9_S_IS_DEBUG (s) 					\
-    && (strchr (P9_S_GET_NAME (s), '\001') != NULL		\
-        || strchr (P9_S_GET_NAME (s), '\002') != NULL	\
-        || (S_LOCAL_NAME(s) && !flag_keep_locals)))	\
-   || (flag_strip_local_absolute			\
-       && ! P9_S_IS_EXTERNAL(s)				\
-       && P9_S_GET_SEGMENT (s) == absolute_section))
-
-/* True if a symbol is not defined in this file */
-#define P9_S_IS_EXTERN(s)		((s)->sy_symbol.n_type & N_EXT)
-
-/* True if the symbol has been generated because of a .stabd directive */
-#define P9_S_IS_STABD(s)		(P9_S_GET_NAME(s) == (char *)0)
-
-/* Accessors */
-/* The name of the symbol */
-#define P9_S_GET_NAME(s)		((s)->sy_symbol.n_un.n_name)
-/* The pointer to the string table */
-#define P9_S_GET_OFFSET(s)		((s)->sy_symbol.n_un.n_strx)
-/* The type of the symbol */
-#define P9_S_GET_TYPE(s)		((s)->sy_symbol.n_type & N_TYPE)
-/* The numeric value of the segment */
-#define P9_S_GET_SEGMENT(s)		(N_TYPE_seg[P9_S_GET_TYPE(s)])
-/* The n_other expression value */
-#define P9_S_GET_OTHER(s)		((s)->sy_symbol.n_other)
-/* The n_desc expression value */
-#define P9_S_GET_DESC(s)		((s)->sy_symbol.n_desc)
-/* Whether the symbol is weak.  */
-#define P9_S_GET_WEAK(s)		((s)->sy_obj)
-
-/* Modifiers */
-/* Assume that a symbol cannot be simultaneously in more than on segment */
-/* set segment */
-#define P9_S_SET_SEGMENT(s,seg)	((s)->sy_symbol.n_type &= ~N_TYPE,(s)->sy_symbol.n_type|=SEGMENT_TO_SYMBOL_TYPE(seg))
-/* The symbol is external */
-#define P9_S_SET_EXTERNAL(s)	((s)->sy_symbol.n_type |= N_EXT)
-/* The symbol is not external */
-#define P9_S_CLEAR_EXTERNAL(s)	((s)->sy_symbol.n_type &= ~N_EXT)
-/* Set the name of the symbol */
-#define P9_S_SET_NAME(s,v)	((s)->sy_symbol.n_un.n_name = (v))
-/* Set the offset in the string table */
-#define P9_S_SET_OFFSET(s,v)	((s)->sy_symbol.n_un.n_strx = (v))
-/* Set the n_type field */
-#define P9_S_SET_TYPE(s,t)	((s)->sy_symbol.n_type = (t))
-/* Set the n_other expression value */
-#define P9_S_SET_OTHER(s,v)	((s)->sy_symbol.n_other = (v))
-/* Set the n_desc expression value */
-#define P9_S_SET_DESC(s,v)	((s)->sy_symbol.n_desc = (v))
-/* Mark the symbol as weak.  This causes n_type to be adjusted when
-   the symbol is written out.  */
-#define P9_S_SET_WEAK(s)	((s)->sy_obj = 1)
-
-/* File header macro and type definition */
-
-#define H_GET_FILE_SIZE(h)	(H_GET_HEADER_SIZE(h) \
-				 + H_GET_TEXT_SIZE(h) \
-				 + H_GET_DATA_SIZE(h) \
-				 + H_GET_SYMBOL_TABLE_SIZE(h) \
-				 + H_GET_TEXT_RELOCATION_SIZE(h) \
-				 + H_GET_DATA_RELOCATION_SIZE(h) \
-				 + H_GET_STRING_SIZE(h))
-
-#define H_GET_HEADER_SIZE(h)		(EXEC_BYTES_SIZE)
-#define H_GET_TEXT_SIZE(h)		((h)->header.a_text)
-#define H_GET_DATA_SIZE(h)		((h)->header.a_data)
-#define H_GET_BSS_SIZE(h)		((h)->header.a_bss)
-#define H_GET_TEXT_RELOCATION_SIZE(h)	((h)->header.a_trsize)
-#define H_GET_DATA_RELOCATION_SIZE(h)	((h)->header.a_drsize)
-#define H_GET_SYMBOL_TABLE_SIZE(h)	((h)->header.a_syms)
-#define H_GET_ENTRY_POINT(h)		((h)->header.a_entry)
-#define H_GET_STRING_SIZE(h)		((h)->string_table_size)
-#define H_GET_LINENO_SIZE(h)		(0)
-
-#define H_GET_DYNAMIC(h)		((h)->header.a_info >> 31)
-#define H_GET_VERSION(h)		(((h)->header.a_info >> 24) & 0x7f)
-#define H_GET_MACHTYPE(h)		(((h)->header.a_info >> 16) & 0xff)
-#define H_GET_MAGIC_NUMBER(h)		((h)->header.a_info & 0xffff)
-
-#define H_SET_DYNAMIC(h,v)		((h)->header.a_info = (((v) << 31) \
-							       | (H_GET_VERSION(h) << 24) \
-							       | (H_GET_MACHTYPE(h) << 16) \
-							       | (H_GET_MAGIC_NUMBER(h))))
-
-#define H_SET_VERSION(h,v)		((h)->header.a_info = ((H_GET_DYNAMIC(h) << 31) \
-							       | ((v) << 24) \
-							       | (H_GET_MACHTYPE(h) << 16) \
-							       | (H_GET_MAGIC_NUMBER(h))))
-
-#define H_SET_MACHTYPE(h,v)		((h)->header.a_info = ((H_GET_DYNAMIC(h) << 31) \
-							       | (H_GET_VERSION(h) << 24) \
-							       | ((v) << 16) \
-							       | (H_GET_MAGIC_NUMBER(h))))
-
-#define H_SET_MAGIC_NUMBER(h,v)		((h)->header.a_info = ((H_GET_DYNAMIC(h) << 31) \
-							       | (H_GET_VERSION(h) << 24) \
-							       | (H_GET_MACHTYPE(h) << 16) \
-							       | ((v))))
-
-#define H_SET_TEXT_SIZE(h,v)		((h)->header.a_text = md_section_align(SEG_TEXT, (v)))
-#define H_SET_DATA_SIZE(h,v)		((h)->header.a_data = md_section_align(SEG_DATA, (v)))
-#define H_SET_BSS_SIZE(h,v)		((h)->header.a_bss = md_section_align(SEG_BSS, (v)))
-
-#define H_SET_RELOCATION_SIZE(h,t,d)	(H_SET_TEXT_RELOCATION_SIZE((h),(t)),\
-					 H_SET_DATA_RELOCATION_SIZE((h),(d)))
-
-#define H_SET_TEXT_RELOCATION_SIZE(h,v)	((h)->header.a_trsize = (v))
-#define H_SET_DATA_RELOCATION_SIZE(h,v)	((h)->header.a_drsize = (v))
-#define H_SET_SYMBOL_TABLE_SIZE(h,v)	((h)->header.a_syms = (v) * 12)
-
-#define H_SET_ENTRY_POINT(h,v)		((h)->header.a_entry = (v))
-#define H_SET_STRING_SIZE(h,v)		((h)->string_table_size = (v))
-
-typedef struct
-  {
-    struct exec header;		/* a.out header */
-    long string_table_size;	/* names + '\0' + sizeof (int) */
-  }
-
-object_headers;
-
-/* line numbering stuff.  */
-#define OBJ_EMIT_LINENO(a, b, c)	{;}
-
-struct fix;
-void tc_plan9_fix_to_chars PARAMS ((char *where, struct fix *fixP, relax_addressT segment_address));
-
-#endif /* ! BFD_ASSEMBLER */
 
 #define obj_read_begin_hook()	{;}
 #define obj_symbol_new_hook(s)	{;}

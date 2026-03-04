@@ -493,9 +493,11 @@ $(OBJS): @ALL_OBJ_DEPS@
 # a compile rule for obj-@obj_format@.o from $(srcdir)/config/obj-@obj_format@.c.
 as_new_SOURCES = $(GAS_CFILES) $(OBJ_FORMAT_C)
 as_new_LDADD = $(TARG_CPU_O) $(OBJ_FORMAT_O) $(ATOF_TARG_O) \
-	$(extra_objects) $(GASLIBS) $(INTLLIBS) $(LIBM)
+	$(extra_objects) $(OPCODES_LIB) $(BFDLIB) ../libiberty/libiberty.a \
+	$(INTLLIBS) $(LIBM)
 as_new_DEPENDENCIES = $(TARG_CPU_O) $(OBJ_FORMAT_O) $(ATOF_TARG_O) \
-	$(extra_objects) $(GASLIBS) $(INTLDEPS)
+	$(extra_objects) $(OPCODES_LIB) $(BFDLIB) ../libiberty/libiberty.a \
+	$(INTLDEPS)
 
 $(OBJS): $(INCDIR)/bin-bugs.h $(INCDIR)/ansidecl.h $(INCDIR)/libiberty.h \
 	$(INCDIR)/progress.h $(INCDIR)/fopen-same.h \
