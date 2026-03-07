@@ -204,9 +204,11 @@ some_plan9_object_p (bfd *abfd,
      const bfd_target *(*callback_to_real_object_p) PARAMS ((bfd *));
 */
 {
+/*
+// moved some below, under result = callback_to_real_object_p(abfd)
 	obj_sym_filepos(abfd) = N_SYMOFF(*execp);
 	obj_str_filepos(abfd) = N_STROFF(*execp);
-
+*/
 	struct aout_data_struct *rawptr, *oldrawptr;
 	const bfd_target *result;
 
@@ -276,6 +278,11 @@ some_plan9_object_p (bfd *abfd,
 	obj_bsssec (abfd)->flags = SEC_ALLOC;
 
 	result = (*callback_to_real_object_p) (abfd);
+	if (result == NULL)
+	  return NULL;
+
+	obj_sym_filepos(abfd) = N_SYMOFF(*execp);
+	obj_str_filepos(abfd) = N_STROFF(*execp);
 
 	/* Now that the segment addresses have been worked out, take a better
 		guess at whether the file is executable.  If the entry point
