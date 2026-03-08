@@ -152,6 +152,28 @@ MY(write_object_contents) (bfd *abfd)
 	bfd_size_type text_size;
 	file_ptr text_end;
 
+
+/* DBG block start */
+  {
+    asection *s;
+    fprintf (stderr, "WRITE: start=%#lx output_has_begun=%d\n",
+             (unsigned long) bfd_get_start_address (abfd),
+             (int) abfd->output_has_begun);
+    for (s = abfd->sections; s != NULL; s = s->next)
+      {
+        fprintf (stderr,
+                 "WRITE: sec=%s vma=%#lx size=%#lx rawsize=%#lx filepos=%#lx flags=%#lx\n",
+                 s->name ? s->name : "(null)",
+                 (unsigned long) s->vma,
+                 (unsigned long) s->size,
+                 (unsigned long) s->rawsize,
+                 (unsigned long) s->filepos,
+                 (unsigned long) s->flags);
+      }
+  }
+/* DBG block end */
+
+
 	/*
 		We must make certain that the magic number has been set.  This
 		will normally have been done by set_section_contents, but only if
@@ -192,8 +214,27 @@ MY(write_object_contents) (bfd *abfd)
 	return true;
 }
 
-/* Finish up the reading of an a.out file header */
 
+
+/* Plan 9 exec headers are always big-endian (including sizes), even on i386.  */
+static void
+plan9_swap_exec_header_in (const struct external_exec *ext,
+                           struct internal_exec *execp)
+{
+  execp->a_info   = bfd_getb32 (ext->e_info);
+  execp->a_text   = bfd_getb32 (ext->e_text);
+  execp->a_data   = bfd_getb32 (ext->e_data);
+  execp->a_bss    = bfd_getb32 (ext->e_bss);
+  execp->a_syms   = bfd_getb32 (ext->e_syms);
+  execp->a_entry  = bfd_getb32 (ext->e_entry);
+  execp->a_trsize = bfd_getb32 (ext->e_trsize);
+  execp->a_drsize = bfd_getb32 (ext->e_drsize);
+}
+
+
+
+
+/* Finish up the reading of an a.out file header */
 static const bfd_target *
 some_plan9_object_p (bfd *abfd,
                      struct internal_exec *execp,
@@ -266,6 +307,12 @@ some_plan9_object_p (bfd *abfd,
 
 	obj_datasec (abfd)->rawsize = execp->a_data;
 	obj_bsssec (abfd)->rawsize = execp->a_bss;
+
+	/* Keep canonical section sizes in sync with rawsize.
+     objdump/size use section->size, not rawsize.  */
+	obj_textsec (abfd)->size = obj_textsec (abfd)->rawsize;
+	obj_datasec (abfd)->size = obj_datasec (abfd)->rawsize;
+	obj_bsssec  (abfd)->size = obj_bsssec  (abfd)->rawsize;
 
 	obj_textsec (abfd)->flags =
 		(execp->a_trsize != 0
@@ -341,34 +388,52 @@ static const bfd_target *MY(object_p) PARAMS ((bfd *));
 */
 static const bfd_target *MY (object_p) (bfd *abfd);
 
+
+
 static const bfd_target *
-MY(object_p) (bfd *abfd)
-/*
-     bfd *abfd;
-*/
+MY (object_p) (bfd *abfd)
 {
-	struct external_exec exec_bytes;	/* Raw exec header from file */
-	struct internal_exec exec;		/* Cleaned-up exec header */
-	const bfd_target *target;
+  struct external_exec exec_bytes;    /* Raw exec header from file */
+  struct internal_exec exec;          /* Decoded exec header */
+  const bfd_target *target;
+  bfd_vma be_info;
 
-	if (bfd_read ((PTR) &exec_bytes, 1, EXEC_BYTES_SIZE, abfd) != EXEC_BYTES_SIZE) {
-		if (bfd_get_error () != bfd_error_system_call)
-			bfd_set_error (bfd_error_wrong_format);
-		return 0;
-	}
+  /* Read raw exec header.  */
+  if (bfd_read ((PTR) &exec_bytes, 1, EXEC_BYTES_SIZE, abfd) != EXEC_BYTES_SIZE)
+    {
+      if (bfd_get_error () != bfd_error_system_call)
+        bfd_set_error (bfd_error_wrong_format);
+      return 0;
+    }
 
-	exec.a_info = bfd_h_get_32 (abfd, exec_bytes.e_info);
+  memset (&exec, 0, sizeof (exec));
 
-	if (N_BADMAG (exec))
-		return 0;
+  /* Plan 9 exec headers are always big-endian (including sizes), even on i386.  */
+  be_info = bfd_getb32 (exec_bytes.e_info);
 
-	NAME(aout,swap_exec_header_in) (abfd, &exec_bytes, &exec);
-	if(N_MAGIC(exec) == QMAGIC)
-		target = some_plan9_object_p (abfd, &exec, MY(callback));
-	else
-		target = NAME(aout,some_aout_object_p)  (abfd, &exec, MY(callback));
-	return target;
+  if (be_info == 0x000001eb)
+    {
+      /* Decode full header as BE.  */
+      plan9_swap_exec_header_in (&exec_bytes, &exec);
+
+      /* Validate magic after decoding.  */
+      if (N_BADMAG (exec))
+        return 0;
+
+      target = some_plan9_object_p (abfd, &exec, MY (callback));
+      return target;
+    }
+
+  /* Non-Plan9: decode using generic a.out rules.  */
+  NAME (aout, swap_exec_header_in) (abfd, &exec_bytes, &exec);
+
+  if (N_BADMAG (exec))
+    return 0;
+
+  target = NAME (aout, some_aout_object_p) (abfd, &exec, MY (callback));
+  return target;
 }
+
 
 static boolean
 putsym(bfd *abfd, int type, char *prefix, char *name, bfd_vma value)
