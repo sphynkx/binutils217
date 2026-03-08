@@ -182,11 +182,50 @@ MY(write_object_contents) (bfd *abfd)
 	if (! abfd->output_has_begun)
 		NAME(aout,adjust_sizes_and_vmas) (abfd, &text_size, &text_end);
 
+  /* When producing a new Plan 9 executable via objcopy/strip, the generic
+     a.out copying code may "pack" VMAs starting at 0 (text=0, data=text_size).
+     Restore Plan 9 VMAs before writing the header/contents.  */
+  if (bfd_get_arch (abfd) == bfd_arch_i386
+      && bfd_get_start_address (abfd) == 0x1020
+      && obj_textsec (abfd) != NULL
+      && obj_datasec (abfd) != NULL
+      && obj_bsssec (abfd) != NULL
+      && obj_textsec (abfd)->vma == 0)
+    {
+      bfd_vma text_vma, data_vma, bss_vma;
+
+      text_vma = 0x1020;
+      data_vma = 0x2000;
+
+      /* Place bss after data; keep 0x1000 alignment like the rest of the format. */
+      bss_vma = data_vma + obj_datasec (abfd)->size;
+      bss_vma = (bss_vma + 0xfff) & ~((bfd_vma) 0xfff);
+
+      obj_textsec (abfd)->vma = text_vma;
+      obj_datasec (abfd)->vma = data_vma;
+      obj_bsssec (abfd)->vma  = bss_vma;
+    }
+
+
+/*
 	if(adata(abfd).magic == o_magic) {
 		obj_reloc_entry_size (abfd) = RELOC_STD_SIZE;
 		WRITE_HEADERS(abfd, execp);
 		return true;
 	}
+*/
+	if (adata (abfd).magic == o_magic)
+	  {
+		/* For plan9-i386, do not use WRITE_HEADERS because it writes
+		   a generic a.out OMAGIC header (0x107).  Always go through
+		   the Plan 9 header writer path below.  */
+		if (bfd_get_arch (abfd) != bfd_arch_i386)
+		  {
+			obj_reloc_entry_size (abfd) = RELOC_STD_SIZE;
+			WRITE_HEADERS (abfd, execp);
+			return true;
+		  }
+	  }
 
 	switch (bfd_get_arch(abfd)) {
 	case bfd_arch_i386:
@@ -208,7 +247,7 @@ MY(write_object_contents) (bfd *abfd)
 	NAME(aout,swap_exec_header_out) (abfd, execp, &exec_bytes);
 
 	if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET) != 0) return false;
-	if (bfd_write ((PTR) &exec_bytes, 1, EXEC_BYTES_SIZE, abfd) != EXEC_BYTES_SIZE)
+	if (bfd_bwrite ((PTR) &exec_bytes, EXEC_BYTES_SIZE, abfd) != EXEC_BYTES_SIZE)
 		return false;
 
 	return true;
@@ -399,7 +438,7 @@ MY (object_p) (bfd *abfd)
   bfd_vma be_info;
 
   /* Read raw exec header.  */
-  if (bfd_read ((PTR) &exec_bytes, 1, EXEC_BYTES_SIZE, abfd) != EXEC_BYTES_SIZE)
+  if (bfd_bread ((PTR) &exec_bytes, EXEC_BYTES_SIZE, abfd) != EXEC_BYTES_SIZE)
     {
       if (bfd_get_error () != bfd_error_system_call)
         bfd_set_error (bfd_error_wrong_format);
