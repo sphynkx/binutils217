@@ -214,18 +214,27 @@ MY(write_object_contents) (bfd *abfd)
 		return true;
 	}
 */
-	if (adata (abfd).magic == o_magic)
-	  {
-		/* For plan9-i386, do not use WRITE_HEADERS because it writes
-		   a generic a.out OMAGIC header (0x107).  Always go through
-		   the Plan 9 header writer path below.  */
-		if (bfd_get_arch (abfd) != bfd_arch_i386)
-		  {
-			obj_reloc_entry_size (abfd) = RELOC_STD_SIZE;
-			WRITE_HEADERS (abfd, execp);
-			return true;
-		  }
-	  }
+	  if (adata (abfd).magic == o_magic)
+		{
+		  /* If we are writing a relocatable object (as does), use the generic
+			 a.out header writer.  The Plan 9 exec writer path (0x1eb) is only
+			 for executables.  */
+		  if ((abfd->flags & EXEC_P) == 0)
+			{
+			  obj_reloc_entry_size (abfd) = RELOC_STD_SIZE;
+			  WRITE_HEADERS (abfd, execp);
+			  return true;
+			}
+
+		  /* Otherwise (executables), do NOT use WRITE_HEADERS on plan9-i386:
+			 it would write OMAGIC (0x107) instead of Plan 9 exec magic (0x1eb).  */
+		  if (bfd_get_arch (abfd) != bfd_arch_i386)
+			{
+			  obj_reloc_entry_size (abfd) = RELOC_STD_SIZE;
+			  WRITE_HEADERS (abfd, execp);
+			  return true;
+			}
+		}
 
 	switch (bfd_get_arch(abfd)) {
 	case bfd_arch_i386:
