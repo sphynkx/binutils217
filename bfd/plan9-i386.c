@@ -251,7 +251,7 @@ MY(write_object_contents) (bfd *abfd)
 	execp->a_entry = bfd_get_start_address (abfd);
 
 	/* stupid hack, because N_HEADER_IN_TEXT can't describe us exactly */
-	execp->a_text -= 0x20;
+	//execp->a_text -= 0x20;
 
 	NAME(aout,swap_exec_header_out) (abfd, execp, &exec_bytes);
 
@@ -327,7 +327,7 @@ some_plan9_object_p (bfd *abfd,
 	adata (abfd).magic = z_magic;
 
 	/* stupid hack, because N_HEADER_IN_TEXT can't describe us exactly */
-	execp->a_text += 0x20;
+	//execp->a_text += 0x20;
 
 	bfd_get_start_address (abfd) = execp->a_entry;
 
