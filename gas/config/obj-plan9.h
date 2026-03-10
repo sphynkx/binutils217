@@ -19,6 +19,11 @@
    Software Foundation, 59 Temple Place - Suite 330, Boston, MA
    02111-1307, USA.  */
 
+#define obj_frob_file obj_plan9_frob_file
+#define obj_frob_file_after_relocs obj_plan9_frob_file_after_relocs
+#define obj_frob_symbol obj_plan9_frob_symbol
+
+
 /* Tag to validate Plan 9 object file format processing */
 #define OBJ_PLAN9 1
 
@@ -26,10 +31,14 @@
 
 #include "bfd/libaout.h"
 
-/* binutils 2.17 does not have bfd_target_plan9_flavour; use a.out flavour.  */
-#ifndef OUTPUT_FLAVOR
-# define OUTPUT_FLAVOR bfd_target_aout_flavour
-#endif
+void obj_plan9_frob_file (void);
+void obj_plan9_frob_file_after_relocs (void);
+void obj_plan9_frob_symbol (symbolS *symp, int *puntp);
+
+/* binutils 2.17 does not have bfd_target_plan9_flavour; use a.out flavour.  3DEL*/
+//#ifndef OUTPUT_FLAVOR
+//#define OUTPUT_FLAVOR bfd_target_aout_flavour
+//#endif
 
 extern const pseudo_typeS aout_pseudo_table[];
 
@@ -61,7 +70,9 @@ typedef struct nlist obj_symbol_type;	/* Symbol table entry */
 
 /* These are provided by GAS; some backends declare them here.  Keep as in-tree
    convention with other a.out-ish formats.  */
-asection *text_section, *data_section, *bss_section;
+//2DEL
+//asection *text_section, *data_section, *bss_section;
+extern asection *text_section, *data_section, *bss_section;
 
 #define obj_sec_sym_ok_for_reloc(SEC)	(1)
 

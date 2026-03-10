@@ -49,12 +49,17 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 #define	I_MAGIC		_MAGIC(11)	/* intel 386 */
 #define	QMAGIC I_MAGIC	/* fake out aout macros */
 
+
+
 #include "bfd.h"
 #include "sysdep.h"
 #include "libbfd.h"
 #include "libaout.h"
-
 #include "aout/aout64.h"
+
+
+
+
 
 /* Binutils 2.17 uses bfd_boolean and TRUE/FALSE.  */
 #define boolean bfd_boolean
@@ -156,13 +161,13 @@ MY(write_object_contents) (bfd *abfd)
 /* DBG block start */
   {
     asection *s;
-    fprintf (stderr, "WRITE: start=%#lx output_has_begun=%d\n",
+    fprintf (stderr, "DBG BFD WRITE1: start=%#lx output_has_begun=%d\n",
              (unsigned long) bfd_get_start_address (abfd),
              (int) abfd->output_has_begun);
     for (s = abfd->sections; s != NULL; s = s->next)
       {
         fprintf (stderr,
-                 "WRITE: sec=%s vma=%#lx size=%#lx rawsize=%#lx filepos=%#lx flags=%#lx\n",
+                 "DBG BFD WRITE2: sec=%s vma=%#lx size=%#lx rawsize=%#lx filepos=%#lx flags=%#lx\n",
                  s->name ? s->name : "(null)",
                  (unsigned long) s->vma,
                  (unsigned long) s->size,
