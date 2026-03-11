@@ -100,6 +100,7 @@ obj_plan9_patch_inplace_addends (void)
           p[2] = (v >> 16) & 0xff;
           p[3] = (v >> 24) & 0xff;
 
+#ifdef DEBUG_PLAN9
           fprintf (stderr,
                    "DBG plan9: inplace-addend sec=%s where=%ld size=%d symsec=%s fx_offset=%ld\n",
                    sec->name,
@@ -107,6 +108,7 @@ obj_plan9_patch_inplace_addends (void)
                    fixp->fx_size,
                    sseg == text_section ? ".text" : (sseg == data_section ? ".data" : ".bss"),
                    (long) fixp->fx_offset);
+#endif
         }
     }
 }
@@ -125,10 +127,10 @@ void
 obj_plan9_frob_file_after_relocs (void)
 {
   asection *sec;
-
+#ifdef DEBUG_PLAN9
 	fprintf (stderr, "DBG plan9: frob_file_after_relocs called (OUTPUT_FLAVOR=%d)\n",
            (int) OUTPUT_FLAVOR);
-
+#endif
   for (sec = stdoutput->sections; sec != NULL; sec = sec->next)
     {
       segment_info_type *seginfo = seg_info (sec);
@@ -170,12 +172,13 @@ obj_plan9_frob_file_after_relocs (void)
 			p[1] = (v >>  8) & 0xff;
 			p[2] = (v >> 16) & 0xff;
 			p[3] = (v >> 24) & 0xff;
-
+#ifdef DEBUG_PLAN9
 			fprintf (stderr,
 					 "DBG plan9: patched in-place addend to %#lx for %s at where=%ld\n",
 					 (unsigned long) v,
 					 (sseg == text_section ? ".text" : (sseg == data_section ? ".data" : ".bss")),
 					 (long) fixp->fx_where);
+#endif
 		  }
 
           if (sym)
@@ -189,6 +192,7 @@ obj_plan9_frob_file_after_relocs (void)
             }
 
           if (k < 20)
+#ifdef DEBUG_PLAN9
             fprintf (stderr,
                      "DBG plan9: fix sec=%s where=%ld size=%d pcrel=%d done=%d off=%ld addn=%ld sym=%s symseg=%s sectsym=%d\n",
                      sec->name,
@@ -201,6 +205,7 @@ obj_plan9_frob_file_after_relocs (void)
                      symname,
                      symseg,
                      (sym && symbol_section_p (sym)) ? 1 : 0);
+#endif
           k++;
         }
     }
@@ -419,7 +424,9 @@ obj_plan9_frob_file ()
   /* Relocation processing may require knowing the VMAs of the sections.
      Since writing to a section will cause the BFD back end to compute the
      VMAs, fake it out here....  */
+#ifdef DEBUG_PLAN9
 	fprintf(stderr, "DBG plan9: obj_plan9_frob_file called\n");
+#endif
   bfd_byte b = 0;
   bfd_boolean x = TRUE;
 

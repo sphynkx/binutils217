@@ -159,6 +159,7 @@ MY(write_object_contents) (bfd *abfd)
 
 
 /* DBG block start */
+#ifdef DEBUG_PLAN9
   {
     asection *s;
     fprintf (stderr, "DBG BFD WRITE1: start=%#lx output_has_begun=%d\n",
@@ -176,6 +177,7 @@ MY(write_object_contents) (bfd *abfd)
                  (unsigned long) s->flags);
       }
   }
+#endif
 /* DBG block end */
 
 
