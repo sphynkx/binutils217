@@ -16,9 +16,9 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
-/*
+
 #define DEBUG_PLAN9
-*/
+
 
 #define	BYTES_IN_WORD	4
 #undef TARGET_IS_BIG_ENDIAN_P
@@ -280,7 +280,8 @@ MY(write_object_contents) (bfd *abfd)
 			execp->a_info = 0; /* fallback */
 		  }
 
-		execp->a_syms = obj_sym_filepos (abfd) - N_SYMOFF (*execp);
+		//execp->a_syms = obj_sym_filepos (abfd) - N_SYMOFF (*execp);
+		execp->a_syms = 0;
 		execp->a_trsize = 0;
 		execp->a_drsize = 0;
 		execp->a_entry = bfd_get_start_address (abfd);
