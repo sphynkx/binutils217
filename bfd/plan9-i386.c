@@ -16,6 +16,9 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
+/*
+#define DEBUG_PLAN9
+*/
 
 #define	BYTES_IN_WORD	4
 #undef TARGET_IS_BIG_ENDIAN_P
@@ -78,7 +81,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 //#define MY_get_symtab_upper_bound plan9_i386_get_symtab_upper_bound
 //#define MY_get_symtab plan9_i386_get_symtab
 
-/* Plan 9 uses static linking.  Disable/ignore dynamic-link related hooks.  */
+static void plan9_swap_exec_header_out (bfd *abfd,
+                                        const struct internal_exec *execp,
+                                        struct external_exec *ext);
 
 /* Plan 9 uses static linking; ignore dynamic-link related hooks.  */
 
@@ -243,30 +248,51 @@ MY(write_object_contents) (bfd *abfd)
 			}
 		}
 
-	switch (bfd_get_arch(abfd)) {
-	case bfd_arch_i386:
-		execp->a_info = QMAGIC;
-		break;
-	default:
-		execp->a_info = 0;
-		break;
-	}
+		/* Plan 9 i386 executables: header magic 0x1eb, big-endian fields.
+		   IMPORTANT: a_text must describe the *gap* from text base (0x1020)
+		   to data base (0x2000), not a page-rounded text size, otherwise the
+		   loader will place data/bss at the wrong address.  */
 
-	execp->a_syms = obj_sym_filepos (abfd)-N_SYMOFF (*execp);
-	execp->a_trsize = 0;
-	execp->a_drsize = 0;
-	execp->a_entry = bfd_get_start_address (abfd);
+		if (bfd_get_arch (abfd) == bfd_arch_i386)
+		  {
+			/* Plan 9 exec magic for i386.  */
+			execp->a_info = 0x1eb;
 
-	/* stupid hack, because N_HEADER_IN_TEXT can't describe us exactly */
-	//execp->a_text -= 0x20;
+			/* Make header sizes consistent with fixed VMAs.  */
+			if (obj_textsec (abfd) != NULL && obj_datasec (abfd) != NULL)
+			  {
+				bfd_vma text_vma = obj_textsec (abfd)->vma;
+				bfd_vma data_vma = obj_datasec (abfd)->vma;
 
-	NAME(aout,swap_exec_header_out) (abfd, execp, &exec_bytes);
+				if (text_vma != 0 && data_vma > text_vma)
+				  execp->a_text = (bfd_vma) (data_vma - text_vma);
+				else
+				  execp->a_text = obj_textsec (abfd)->size;
+			  }
+			else if (obj_textsec (abfd) != NULL)
+			  execp->a_text = obj_textsec (abfd)->size;
 
-	if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET) != 0) return false;
-	if (bfd_bwrite ((PTR) &exec_bytes, EXEC_BYTES_SIZE, abfd) != EXEC_BYTES_SIZE)
-		return false;
+			execp->a_data = (obj_datasec (abfd) != NULL) ? obj_datasec (abfd)->size : 0;
+			execp->a_bss  = (obj_bsssec (abfd)  != NULL) ? obj_bsssec  (abfd)->size : 0;
+		  }
+		else
+		  {
+			execp->a_info = 0; /* fallback */
+		  }
 
-	return true;
+		execp->a_syms = obj_sym_filepos (abfd) - N_SYMOFF (*execp);
+		execp->a_trsize = 0;
+		execp->a_drsize = 0;
+		execp->a_entry = bfd_get_start_address (abfd);
+
+		plan9_swap_exec_header_out (abfd, execp, &exec_bytes);
+
+		if (bfd_seek (abfd, (file_ptr) 0, SEEK_SET) != 0)
+		  return false;
+		if (bfd_bwrite ((PTR) &exec_bytes, EXEC_BYTES_SIZE, abfd) != EXEC_BYTES_SIZE)
+		  return false;
+
+		return true;
 }
 
 
@@ -286,7 +312,20 @@ plan9_swap_exec_header_in (const struct external_exec *ext,
   execp->a_drsize = bfd_getb32 (ext->e_drsize);
 }
 
-
+static void
+plan9_swap_exec_header_out (bfd *abfd,
+                            const struct internal_exec *execp,
+                            struct external_exec *ext)
+{
+  bfd_putb32 (execp->a_info,  ext->e_info);
+  bfd_putb32 (execp->a_text,  ext->e_text);
+  bfd_putb32 (execp->a_data,  ext->e_data);
+  bfd_putb32 (execp->a_bss,   ext->e_bss);
+  bfd_putb32 (execp->a_syms,  ext->e_syms);
+  bfd_putb32 (execp->a_entry, ext->e_entry);
+  bfd_putb32 (execp->a_trsize,ext->e_trsize);
+  bfd_putb32 (execp->a_drsize,ext->e_drsize);
+}
 
 
 /* Finish up the reading of an a.out file header */

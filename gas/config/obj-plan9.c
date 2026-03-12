@@ -37,6 +37,71 @@ static void obj_plan9_line PARAMS ((int));
 static void obj_plan9_weak PARAMS ((int));
 static void obj_plan9_type PARAMS ((int));
 static void obj_plan9_section (int);
+static void obj_plan9_comm (int);
+
+
+// in gas/config/obj-plan9.c
+
+static int
+plan9_align_to_pow2 (addressT align_bytes)
+{
+  int p2 = 0;
+  if (align_bytes == 0)
+    return 0;
+  /* Only accept power-of-two alignments.  */
+  while ((align_bytes & 1) == 0)
+    {
+      align_bytes >>= 1;
+      p2++;
+    }
+  if (align_bytes != 1)
+    return 0;
+  return p2;
+}
+
+static void
+obj_plan9_comm (int ignore ATTRIBUTE_UNUSED)
+{
+  char *name;
+  char *end;
+  char c;
+  symbolS *symbolP;
+  addressT size;
+  addressT align_bytes = 0;
+  int align_p2 = 0;
+
+  name = input_line_pointer;
+  c = get_symbol_end ();
+  end = input_line_pointer;
+
+  symbolP = symbol_find_or_make (name);
+  *end = c;
+
+  SKIP_WHITESPACE ();
+  if (*input_line_pointer != ',')
+    {
+      as_bad (_("expected comma after symbol name in .comm"));
+      ignore_rest_of_line ();
+      return;
+    }
+  input_line_pointer++; /* skip comma */
+
+  size = get_absolute_expression ();
+
+  SKIP_WHITESPACE ();
+  if (*input_line_pointer == ',')
+    {
+      input_line_pointer++;
+      align_bytes = get_absolute_expression ();
+      align_p2 = plan9_align_to_pow2 (align_bytes);
+    }
+
+  demand_empty_rest_of_line ();
+
+  /* Allocate in BSS/COMMON.  */
+  bss_alloc (symbolP, size, align_p2);
+}
+
 
 
 /* start of patch1 for fix relocs */
@@ -242,6 +307,12 @@ const pseudo_typeS aout_pseudo_table[] =
   {"version", s_ignore, 0},
 
   {"optim", s_ignore, 0},	/* For sun386i cc (?) */
+
+  /* ELF/GNU as pseudos that may appear in compiler-generated .s.
+     For Plan 9 a.out we either ignore them or map to existing handlers.  */
+  {"local", s_ignore, 0},    /* e.g. .local sym  (ELF visibility hint) */
+  {"comm", obj_plan9_comm, 0},       /* e.g. .comm sym, size, align */
+  {"lcomm", s_lcomm, 0},     /* sometimes emitted by toolchains */
 
   /* other stuff */
   {"ABORT", s_abort, 0},
