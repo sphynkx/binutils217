@@ -1,4 +1,4 @@
-This is binutils.info, produced by makeinfo version 7.0.3 from
+This is binutils.info, produced by makeinfo version 7.1 from
 binutils.texi.
 
 START-INFO-DIR-ENTRY
@@ -27,8 +27,8 @@ END-INFO-DIR-ENTRY
 under the terms of the GNU Free Documentation License, Version 1.1 or
 any later version published by the Free Software Foundation; with no
 Invariant Sections, with no Front-Cover Texts, and with no Back-Cover
-Texts.  A copy of the license is included in the section entitled “GNU
-Free Documentation License”.
+Texts.  A copy of the license is included in the section entitled "GNU
+Free Documentation License".
 
 
 File: binutils.info,  Node: Top,  Next: ar,  Up: (dir)
@@ -80,7 +80,7 @@ An “archive” is a single file holding a collection of other files in a
 structure that makes it possible to retrieve the original individual
 files (called “members” of the archive).
 
-   The original files’ contents, mode (permissions), timestamp, owner,
+   The original files' contents, mode (permissions), timestamp, owner,
 and group are preserved in the archive, and can be restored on
 extraction.
 
@@ -110,7 +110,7 @@ be used to add just the table.
 You can control its activity using command-line options, like the
 different varieties of ‘ar’ on Unix systems; or, if you specify the
 single command-line option ‘-M’, you can control it with a script
-supplied via standard input, like the MRI “librarian” program.
+supplied via standard input, like the MRI "librarian" program.
 
 * Menu:
 
@@ -179,7 +179,7 @@ the following, but you must specify only one of them:
 
      The modifier ‘v’ makes ‘ar’ list each file as it is appended.
 
-     Since the point of this operation is speed, the archive’s symbol
+     Since the point of this operation is speed, the archive's symbol
      table index is not updated, even if it already existed; you can use
      ‘ar s’ or ‘ranlib’ explicitly to update the symbol table index.
 
@@ -216,7 +216,7 @@ the following, but you must specify only one of them:
 
      If there is more than one file with the same name (say, ‘fie’) in
      an archive (say ‘b.a’), ‘ar t b.a fie’ lists only the first
-     instance; to see them all, you must ask for a complete listing—in
+     instance; to see them all, you must ask for a complete listing--in
      our example, ‘ar t b.a’.
 
 ‘x’
@@ -228,7 +228,7 @@ the following, but you must specify only one of them:
      extracted.
 
    A number of modifiers (MOD) may immediately follow the P keyletter,
-to specify variations on an operation’s behavior:
+to specify variations on an operation's behavior:
 
 ‘a’
      Add new files _after_ an existing member of the archive.  If you
@@ -338,7 +338,7 @@ abandons execution (with a nonzero exit code) on any error.
 command-line options; in fact, it provides somewhat less control over
 archives.  The only purpose of the command language is to ease the
 transition to GNU ‘ar’ for developers who already have scripts written
-for the MRI “librarian” program.
+for the MRI "librarian" program.
 
    The syntax for the ‘ar’ command language is straightforward:
    • commands are recognized in upper or lower case; for example, ‘LIST’
@@ -427,7 +427,7 @@ file required for most of the other commands.
      Requires prior use of ‘OPEN’ or ‘CREATE’.
 
 ‘LIST’
-     Display full contents of the current archive, in “verbose” style
+     Display full contents of the current archive, in "verbose" style
      regardless of the state of ‘VERBOSE’.  The effect is like ‘ar tv
      ARCHIVE’.  (This single command is a GNU ‘ar’ enhancement, rather
      than present for MRI compatibility.)
@@ -490,7 +490,7 @@ object files are listed as arguments, ‘nm’ assumes the file ‘a.out’.
      the symbol is local; if uppercase, the symbol is global (external).
 
      ‘A’
-          The symbol’s value is absolute, and will not be changed by
+          The symbol's value is absolute, and will not be changed by
           further linking.
 
      ‘B’
@@ -502,7 +502,7 @@ object files are listed as arguments, ‘nm’ assumes the file ‘a.out’.
           When linking, multiple common symbols may appear with the same
           name.  If the symbol is defined anywhere, the common symbols
           are treated as undefined references.  For more details on
-          common symbols, see the discussion of –warn-common in *note
+          common symbols, see the discussion of -warn-common in *note
           Linker options: (ld.info)Options.
 
      ‘D’
@@ -672,7 +672,7 @@ equivalent.
      ‘d’ for decimal, ‘o’ for octal, or ‘x’ for hexadecimal.
 
 ‘--target=BFDNAME’
-     Specify an object code format other than your system’s default
+     Specify an object code format other than your system's default
      format.  *Note Target Selection::, for more information.
 
 ‘-u’
@@ -794,7 +794,7 @@ to use ‘-S’ to remove sections containing debugging information.  In
 some cases ‘-R’ will be useful to remove sections which contain
 information that is not needed by the binary file.
 
-   Note—‘objcopy’ is not able to change the endianness of its input
+   Note--‘objcopy’ is not able to change the endianness of its input
 files.  If the input format has an endianness (some formats do not),
 ‘objcopy’ can only copy the inputs into file formats that have the same
 endianness or which have no endianness (e.g., ‘srec’).
@@ -807,7 +807,7 @@ endianness or which have no endianness (e.g., ‘srec’).
 
 ‘-I BFDNAME’
 ‘--input-target=BFDNAME’
-     Consider the source file’s object format to be BFDNAME, rather than
+     Consider the source file's object format to be BFDNAME, rather than
      attempting to deduce it.  *Note Target Selection::, for more
      information.
 
@@ -902,8 +902,8 @@ endianness or which have no endianness (e.g., ‘srec’).
 
             -w -W !foo -W fo*
 
-     would cause objcopy to weaken all symbols that start with “fo”
-     except for the symbol “foo”.
+     would cause objcopy to weaken all symbols that start with "fo"
+     except for the symbol "foo".
 
 ‘-x’
 ‘--discard-all’
@@ -1022,7 +1022,7 @@ endianness or which have no endianness (e.g., ‘srec’).
      ‘share’, and ‘debug’.  You can set the ‘contents’ flag for a
      section which does not have contents, but it is not meaningful to
      clear the ‘contents’ flag of a section which does have
-     contents–just remove the section instead.  Not all flags are
+     contents-just remove the section instead.  Not all flags are
      meaningful for all object file formats.
 
 ‘--add-section SECTIONNAME=FILENAME’
@@ -1034,7 +1034,7 @@ endianness or which have no endianness (e.g., ‘srec’).
 
 ‘--rename-section OLDNAME=NEWNAME[,FLAGS]’
      Rename a section from OLDNAME to NEWNAME, optionally changing the
-     section’s flags to FLAGS in the process.  This has the advantage
+     section's flags to FLAGS in the process.  This has the advantage
      over usng a linker script to perform the rename in that the output
      stays as an object file and does not become a linked executable.
 
@@ -1148,19 +1148,19 @@ endianness or which have no endianness (e.g., ‘srec’).
      be stored in the e_machine field of the ELF header.
 
 ‘--writable-text’
-     Mark the output text as writable.  This option isn’t meaningful for
+     Mark the output text as writable.  This option isn't meaningful for
      all object file formats.
 
 ‘--readonly-text’
-     Make the output text write protected.  This option isn’t meaningful
+     Make the output text write protected.  This option isn't meaningful
      for all object file formats.
 
 ‘--pure’
-     Mark the output file as demand paged.  This option isn’t meaningful
+     Mark the output file as demand paged.  This option isn't meaningful
      for all object file formats.
 
 ‘--impure’
-     Mark the output file as impure.  This option isn’t meaningful for
+     Mark the output file as impure.  This option isn't meaningful for
      all object file formats.
 
 ‘--prefix-symbols=STRING’
@@ -1423,9 +1423,9 @@ equivalent.  At least one option from the list
      If the target is an ARM architecture then this switch can be used
      to select which register name set is used during disassembler.
      Specifying ‘-M reg-names-std’ (the default) will select the
-     register names as used in ARM’s instruction set documentation, but
-     with register 13 called ’sp’, register 14 called ’lr’ and register
-     15 called ’pc’.  Specifying ‘-M reg-names-apcs’ will select the
+     register names as used in ARM's instruction set documentation, but
+     with register 13 called 'sp', register 14 called 'lr' and register
+     15 called 'pc'.  Specifying ‘-M reg-names-apcs’ will select the
      name set used by the ARM Procedure Call Standard, whilst specifying
      ‘-M reg-names-raw’ will just use ‘r’ followed by the register
      number.
@@ -1465,9 +1465,9 @@ equivalent.  At least one option from the list
      separated string, and invalid options are ignored:
 
      ‘no-aliases’
-          Print the ’raw’ instruction mneumonic instead of some pseudo
-          instruction mneumonic.  I.E. print ’daddu’ or ’or’ instead of
-          ’move’, ’sll’ instead of ’nop’, etc.
+          Print the 'raw' instruction mneumonic instead of some pseudo
+          instruction mneumonic.  I.E. print 'daddu' or 'or' instead of
+          'move', 'sll' instead of 'nop', etc.
 
      ‘gpr-names=ABI’
           Print GPR (general-purpose register) names as appropriate for
@@ -1505,7 +1505,7 @@ equivalent.  At least one option from the list
 
      For VAX, you can specify function entry addresses with ‘-M
      entry:0xf00ba’.  You can use this multiple times to properly
-     disassemble VAX binary files that don’t contain symbol tables (like
+     disassemble VAX binary files that don't contain symbol tables (like
      ROM dumps).  In these cases, the function entry mask would
      otherwise be decoded as VAX instructions, which would probably lead
      the the rest of the function being wrongly disassembled.
@@ -1649,10 +1649,10 @@ File: binutils.info,  Node: size,  Next: strings,  Prev: ranlib,  Up: Top
           [--target=BFDNAME] [-V|--version]
           [OBJFILE...]
 
-   The GNU ‘size’ utility lists the section sizes—and the total size—for
-each of the object or archive files OBJFILE in its argument list.  By
-default, one line of output is generated for each object file or each
-module in an archive.
+   The GNU ‘size’ utility lists the section sizes--and the total
+size--for each of the object or archive files OBJFILE in its argument
+list.  By default, one line of output is generated for each object file
+or each module in an archive.
 
    OBJFILE... are the object files to be examined.  If none are
 specified, the file ‘a.out’ will be used.
@@ -1666,7 +1666,7 @@ specified, the file ‘a.out’ will be used.
      GNU ‘size’ resembles output from System V ‘size’ (using ‘-A’, or
      ‘--format=sysv’), or Berkeley ‘size’ (using ‘-B’, or
      ‘--format=berkeley’).  The default is the one-line format similar
-     to Berkeley’s.
+     to Berkeley's.
 
      Here is an example of the Berkeley (default) format of output from
      ‘size’:
@@ -1707,7 +1707,7 @@ specified, the file ‘a.out’ will be used.
      ‘--radix=NUMBER’, only the three values (8, 10, 16) are supported.
      The total size is always given in two radices; decimal and
      hexadecimal for ‘-d’ or ‘-x’ output, or octal and hexadecimal if
-     you’re using ‘-o’.
+     you're using ‘-o’.
 
 ‘-t’
 ‘--totals’
@@ -1775,8 +1775,8 @@ files.
 ‘-t RADIX’
 ‘--radix=RADIX’
      Print the offset within the file before each string.  The single
-     character argument specifies the radix of the offset—‘o’ for octal,
-     ‘x’ for hexadecimal, or ‘d’ for decimal.
+     character argument specifies the radix of the offset--‘o’ for
+     octal, ‘x’ for hexadecimal, or ‘d’ for decimal.
 
 ‘-e ENCODING’
 ‘--encoding=ENCODING’
@@ -1788,7 +1788,7 @@ files.
      Useful for finding wide character strings.
 
 ‘--target=BFDNAME’
-     Specify an object code format other than your system’s default
+     Specify an object code format other than your system's default
      format.  *Note Target Selection::, for more information.
 
 ‘-v’
@@ -1899,7 +1899,7 @@ modified copies under different names.
             -w -K !foo -K fo*
 
      would cause strip to only keep symbols that start with the letters
-     “fo”, but to discard the symbol “foo”.
+     "fo", but to discard the symbol "foo".
 
 ‘-x’
 ‘--discard-all’
@@ -2002,7 +2002,7 @@ performed to seperate them from surrounding text.  Thus for example:
 
      c++filt -n _Z1fv
 
-   will work and demangle the name to “f()” whereas:
+   will work and demangle the name to "f()" whereas:
 
      c++filt -n _Z1fv,
 
@@ -2011,7 +2011,7 @@ which makes it invalid).  This command however will work:
 
      echo _Z1fv, | c++filt -n
 
-   and will display “f(),” ie the demangled name followed by a trailing
+   and will display "f()," ie the demangled name followed by a trailing
 comma.  This behaviour is because when the names are read from the
 standard input it is expected that they might be part of an assembler
 source file where there might be extra, extraneous characters trailing
@@ -2039,15 +2039,15 @@ after a mangled name.  eg:
 ‘-p’
 ‘--no-params’
      When demangling the name of a function, do not display the types of
-     the function’s parameters.
+     the function's parameters.
 
 ‘-t’
 ‘--types’
      Attempt to demangle types as well as function names.  This is
      disabled by default since mangled types are normally only used
      internally in the compiler, and they can be confused with
-     non-mangled names.  eg a function called “a” treated as a mangled
-     type name would be demangled to “signed char”.
+     non-mangled names.  eg a function called "a" treated as a mangled
+     type name would be demangled to "signed char".
 
 ‘-i’
 ‘--no-verbose’
@@ -2214,7 +2214,7 @@ NetWare Loadable Module OUTFILE, optionally reading HEADERFILE for NLM
 header information.  For instructions on writing the NLM command file
 language used in header files, see the ‘linkers’ section, ‘NLMLINK’ in
 particular, of the ‘NLM Development and Tools Overview’, which is part
-of the NLM Software Developer’s Kit (“NLM SDK”), available from Novell,
+of the NLM Software Developer's Kit ("NLM SDK"), available from Novell,
 Inc.  ‘nlmconv’ uses the GNU Binary File Descriptor library to read
 INFILE; see *note BFD: (ld.info)BFD, for more information.
 
@@ -2241,7 +2241,7 @@ this case, ‘nlmconv’ calls the linker for you.
      Reads HEADERFILE for NLM header information.  For instructions on
      writing the NLM command file language used in header files, see see
      the ‘linkers’ section, of the ‘NLM Development and Tools Overview’,
-     which is part of the NLM Software Developer’s Kit, available from
+     which is part of the NLM Software Developer's Kit, available from
      Novell, Inc.
 
 ‘-d’
@@ -2385,7 +2385,7 @@ available to Windows.
 
 ‘-v’
      Enable verbose mode.  This tells you what the preprocessor is if
-     you didn’t specify one.
+     you didn't specify one.
 
 ‘-l VAL’
 ‘--language VAL’
@@ -2679,7 +2679,7 @@ uses that DLL:
 
 ‘-V’
 ‘--version’
-     Displays dlltool’s version number and then exits.
+     Displays dlltool's version number and then exits.
 
 * Menu:
 
@@ -2784,18 +2784,18 @@ equivalent.  At least one option besides ‘-v’ or ‘-H’ must be given.
 ‘-l’
 ‘--program-headers’
 ‘--segments’
-     Displays the information contained in the file’s segment headers,
+     Displays the information contained in the file's segment headers,
      if it has any.
 
 ‘-S’
 ‘--sections’
 ‘--section-headers’
-     Displays the information contained in the file’s section headers,
+     Displays the information contained in the file's section headers,
      if it has any.
 
 ‘-g’
 ‘--section-groups’
-     Displays the information contained in the file’s section groups, if
+     Displays the information contained in the file's section groups, if
      it has any.
 
 ‘-t’
@@ -2818,18 +2818,18 @@ equivalent.  At least one option besides ‘-v’ or ‘-H’ must be given.
 
 ‘-r’
 ‘--relocs’
-     Displays the contents of the file’s relocation section, if it has
+     Displays the contents of the file's relocation section, if it has
      one.
 
 ‘-u’
 ‘--unwind’
-     Displays the contents of the file’s unwind section, if it has one.
+     Displays the contents of the file's unwind section, if it has one.
      Only the unwind sections for IA64 ELF files are currently
      supported.
 
 ‘-d’
 ‘--dynamic’
-     Displays the contents of the file’s dynamic section, if it has one.
+     Displays the contents of the file's dynamic section, if it has one.
 
 ‘-V’
 ‘--version-info’
@@ -2844,7 +2844,7 @@ equivalent.  At least one option besides ‘-v’ or ‘-H’ must be given.
 ‘-D’
 ‘--use-dynamic’
      When displaying symbols, this option makes ‘readelf’ use the symbol
-     table in the file’s dynamic section, rather than the one in the
+     table in the file's dynamic section, rather than the one in the
      symbols section.
 
 ‘-x <number or name>’
@@ -2872,7 +2872,7 @@ equivalent.  At least one option besides ‘-v’ or ‘-H’ must be given.
 
 ‘-W’
 ‘--wide’
-     Don’t break output lines to fit into 80 columns.  By default
+     Don't break output lines to fit into 80 columns.  By default
      ‘readelf’ breaks section header and segment listing lines for
      64-bit ELF files, so that they fit into 80 columns.  This option
      causes ‘readelf’ to print each section header resp.  each segment
@@ -2998,7 +2998,7 @@ Ways to specify:
   1. command line options: ‘-O’ or ‘--output-target’, or ‘-F’ or
      ‘--target’
 
-  2. the input target (see “‘objcopy’ and ‘strip’ Input Target” above)
+  2. the input target (see "‘objcopy’ and ‘strip’ Input Target" above)
 
   3. environment variable ‘GNUTARGET’
 
@@ -3122,8 +3122,8 @@ and the most helpful.
 the bug if it is new to us.  Therefore, always write your bug reports on
 the assumption that the bug has not been reported previously.
 
-   Sometimes people give a few sketchy facts and ask, “Does this ring a
-bell?” This cannot help us fix a bug, so it is basically useless.  We
+   Sometimes people give a few sketchy facts and ask, "Does this ring a
+bell?"  This cannot help us fix a bug, so it is basically useless.  We
 respond by asking for enough details to enable us to investigate.  You
 might as well expedite matters by sending them to begin with.
 
@@ -3142,7 +3142,7 @@ might as well expedite matters by sending them to begin with.
      and version number.
 
    • What compiler (and its version) was used to compile the
-     utilities—e.g.  “‘gcc-2.7’”.
+     utilities--e.g.  "‘gcc-2.7’".
 
    • The command arguments you gave the utility to observe the bug.  To
      guarantee you will not omit something important, list them all.  A
@@ -3167,7 +3167,7 @@ might as well expedite matters by sending them to begin with.
      configured.
 
    • A description of what behavior you observe that you believe is
-     incorrect.  For example, “It gets a fatal signal.”
+     incorrect.  For example, "It gets a fatal signal."
 
      Of course, if the bug is that the utility gets a fatal signal, then
      we will certainly notice it.  But if the bug is incorrect output,
@@ -3256,14 +3256,14 @@ Appendix A GNU Free Documentation License
   0. PREAMBLE
 
      The purpose of this License is to make a manual, textbook, or other
-     written document “free” in the sense of freedom: to assure everyone
+     written document "free" in the sense of freedom: to assure everyone
      the effective freedom to copy and redistribute it, with or without
      modifying it, either commercially or noncommercially.  Secondarily,
      this License preserves for the author and publisher a way to get
      credit for their work, while not being considered responsible for
      modifications made by others.
 
-     This License is a kind of “copyleft”, which means that derivative
+     This License is a kind of "copyleft", which means that derivative
      works of the document must themselves be free in the same sense.
      It complements the GNU General Public License, which is a copyleft
      license designed for free software.
@@ -3282,17 +3282,17 @@ Appendix A GNU Free Documentation License
 
      This License applies to any manual or other work that contains a
      notice placed by the copyright holder saying it can be distributed
-     under the terms of this License.  The “Document”, below, refers to
+     under the terms of this License.  The "Document", below, refers to
      any such manual or work.  Any member of the public is a licensee,
-     and is addressed as “you.”
+     and is addressed as "you."
 
-     A “Modified Version” of the Document means any work containing the
+     A "Modified Version" of the Document means any work containing the
      Document or a portion of it, either copied verbatim, or with
      modifications and/or translated into another language.
 
-     A “Secondary Section” is a named appendix or a front-matter section
+     A "Secondary Section" is a named appendix or a front-matter section
      of the Document that deals exclusively with the relationship of the
-     publishers or authors of the Document to the Document’s overall
+     publishers or authors of the Document to the Document's overall
      subject (or to related matters) and contains nothing that could
      fall directly within that overall subject.  (For example, if the
      Document is in part a textbook of mathematics, a Secondary Section
@@ -3301,15 +3301,15 @@ Appendix A GNU Free Documentation License
      matters, or of legal, commercial, philosophical, ethical or
      political position regarding them.
 
-     The “Invariant Sections” are certain Secondary Sections whose
+     The "Invariant Sections" are certain Secondary Sections whose
      titles are designated, as being those of Invariant Sections, in the
      notice that says that the Document is released under this License.
 
-     The “Cover Texts” are certain short passages of text that are
+     The "Cover Texts" are certain short passages of text that are
      listed, as Front-Cover Texts or Back-Cover Texts, in the notice
      that says that the Document is released under this License.
 
-     A “Transparent” copy of the Document means a machine-readable copy,
+     A "Transparent" copy of the Document means a machine-readable copy,
      represented in a format whose specification is available to the
      general public, whose contents can be viewed and edited directly
      and straightforwardly with generic text editors or (for images
@@ -3319,7 +3319,7 @@ Appendix A GNU Free Documentation License
      formats suitable for input to text formatters.  A copy made in an
      otherwise Transparent file format whose markup has been designed to
      thwart or discourage subsequent modification by readers is not
-     Transparent.  A copy that is not “Transparent” is called “Opaque.”
+     Transparent.  A copy that is not "Transparent" is called "Opaque."
 
      Examples of suitable formats for Transparent copies include plain
      ASCII without markup, Texinfo input format, LaTeX input format,
@@ -3331,12 +3331,12 @@ Appendix A GNU Free Documentation License
      the machine-generated HTML produced by some word processors for
      output purposes only.
 
-     The “Title Page” means, for a printed book, the title page itself,
+     The "Title Page" means, for a printed book, the title page itself,
      plus such following pages as are needed to hold, legibly, the
      material this License requires to appear in the title page.  For
-     works in formats which do not have any title page as such, “Title
-     Page” means the text near the most prominent appearance of the
-     work’s title, preceding the beginning of the body of the text.
+     works in formats which do not have any title page as such, "Title
+     Page" means the text near the most prominent appearance of the
+     work's title, preceding the beginning of the body of the text.
 
   2. VERBATIM COPYING
 
@@ -3357,7 +3357,7 @@ Appendix A GNU Free Documentation License
   3. COPYING IN QUANTITY
 
      If you publish printed copies of the Document numbering more than
-     100, and the Document’s license notice requires Cover Texts, you
+     100, and the Document's license notice requires Cover Texts, you
      must enclose the copies in covers that carry, clearly and legibly,
      all these Cover Texts: Front-Cover Texts on the front cover, and
      Back-Cover Texts on the back cover.  Both covers must also clearly
@@ -3422,46 +3422,46 @@ Appendix A GNU Free Documentation License
      under the terms of this License, in the form shown in the Addendum
      below.
      G. Preserve in that license notice the full lists of Invariant
-     Sections and required Cover Texts given in the Document’s license
+     Sections and required Cover Texts given in the Document's license
      notice.
      H. Include an unaltered copy of this License.
-     I. Preserve the section entitled “History”, and its title, and add
+     I. Preserve the section entitled "History", and its title, and add
      to it an item stating at least the title, year, new authors, and
      publisher of the Modified Version as given on the Title Page.  If
-     there is no section entitled “History” in the Document, create one
+     there is no section entitled "History" in the Document, create one
      stating the title, year, authors, and publisher of the Document as
      given on its Title Page, then add an item describing the Modified
      Version as stated in the previous sentence.
      J. Preserve the network location, if any, given in the Document for
      public access to a Transparent copy of the Document, and likewise
      the network locations given in the Document for previous versions
-     it was based on.  These may be placed in the “History” section.
+     it was based on.  These may be placed in the "History" section.
      You may omit a network location for a work that was published at
      least four years before the Document itself, or if the original
      publisher of the version it refers to gives permission.
-     K. In any section entitled “Acknowledgements” or “Dedications”,
-     preserve the section’s title, and preserve in the section all the
+     K. In any section entitled "Acknowledgements" or "Dedications",
+     preserve the section's title, and preserve in the section all the
      substance and tone of each of the contributor acknowledgements
      and/or dedications given therein.
      L. Preserve all the Invariant Sections of the Document, unaltered
      in their text and in their titles.  Section numbers or the
      equivalent are not considered part of the section titles.
-     M. Delete any section entitled “Endorsements.” Such a section may
+     M. Delete any section entitled "Endorsements."  Such a section may
      not be included in the Modified Version.
-     N. Do not retitle any existing section as “Endorsements” or to
+     N. Do not retitle any existing section as "Endorsements" or to
      conflict in title with any Invariant Section.
 
      If the Modified Version includes new front-matter sections or
      appendices that qualify as Secondary Sections and contain no
      material copied from the Document, you may at your option designate
      some or all of these sections as invariant.  To do this, add their
-     titles to the list of Invariant Sections in the Modified Version’s
+     titles to the list of Invariant Sections in the Modified Version's
      license notice.  These titles must be distinct from any other
      section titles.
 
-     You may add a section entitled “Endorsements”, provided it contains
+     You may add a section entitled "Endorsements", provided it contains
      nothing but endorsements of your Modified Version by various
-     parties–for example, statements of peer review or that the text has
+     parties-for example, statements of peer review or that the text has
      been approved by an organization as the authoritative definition of
      a standard.
 
@@ -3500,10 +3500,10 @@ Appendix A GNU Free Documentation License
      combined work.
 
      In the combination, you must combine any sections entitled
-     “History” in the various original documents, forming one section
-     entitled “History”; likewise combine any sections entitled
-     “Acknowledgements”, and any sections entitled “Dedications.” You
-     must delete all sections entitled “Endorsements.”
+     "History" in the various original documents, forming one section
+     entitled "History"; likewise combine any sections entitled
+     "Acknowledgements", and any sections entitled "Dedications."  You
+     must delete all sections entitled "Endorsements."
 
   6. COLLECTIONS OF DOCUMENTS
 
@@ -3527,14 +3527,14 @@ Appendix A GNU Free Documentation License
      storage or distribution medium, does not as a whole count as a
      Modified Version of the Document, provided no compilation copyright
      is claimed for the compilation.  Such a compilation is called an
-     “aggregate”, and this License does not apply to the other
+     "aggregate", and this License does not apply to the other
      self-contained works thus compiled with the Document, on account of
      their being thus compiled, if they are not themselves derivative
      works of the Document.
 
      If the Cover Text requirement of section 3 is applicable to these
      copies of the Document, then if the Document is less than one
-     quarter of the entire aggregate, the Document’s Cover Texts may be
+     quarter of the entire aggregate, the Document's Cover Texts may be
      placed on covers that surround only the Document within the
      aggregate.  Otherwise they must appear on covers around the whole
      aggregate.
@@ -3572,7 +3572,7 @@ Appendix A GNU Free Documentation License
 
      Each version of the License is given a distinguishing version
      number.  If the Document specifies that a particular numbered
-     version of this License “or any later version” applies to it, you
+     version of this License "or any later version" applies to it, you
      have the option of following the terms and conditions either of
      that specified version or of any later version that has been
      published (not as a draft) by the Free Software Foundation.  If the
@@ -3596,10 +3596,10 @@ notices just after the title page:
      A copy of the license is included in the section entitled "GNU
      Free Documentation License."
 
-   If you have no Invariant Sections, write “with no Invariant Sections”
+   If you have no Invariant Sections, write "with no Invariant Sections"
 instead of saying which ones are invariant.  If you have no Front-Cover
-Texts, write “no Front-Cover Texts” instead of “Front-Cover Texts being
-LIST”; likewise for Back-Cover Texts.
+Texts, write "no Front-Cover Texts" instead of "Front-Cover Texts being
+LIST"; likewise for Back-Cover Texts.
 
    If your document contains nontrivial examples of program code, we
 recommend releasing these examples in parallel under your choice of free
@@ -3763,34 +3763,34 @@ Index
 
 
 Tag Table:
-Node: Top1714
-Node: ar3267
-Node: ar cmdline5531
-Node: ar scripts14018
-Node: nm20024
-Node: objcopy28502
-Node: objdump52121
-Node: ranlib67547
-Node: size68341
-Node: strings71307
-Node: strip73760
-Node: c++filt79413
-Ref: c++filt-Footnote-184484
-Node: addr2line84598
-Node: nlmconv87979
-Node: windres90695
-Node: dlltool96816
-Node: def file format108039
-Node: readelf109972
-Node: Common Options114872
-Node: Selecting The Target System115918
-Node: Target Selection116862
-Node: Architecture Selection118987
-Node: Reporting Bugs119863
-Node: Bug Criteria120642
-Node: Bug Reporting121201
-Node: GNU Free Documentation License128393
-Node: Index148168
+Node: Top1708
+Node: ar3261
+Node: ar cmdline5519
+Node: ar scripts14001
+Node: nm19999
+Node: objcopy28471
+Node: objdump52067
+Node: ranlib67453
+Node: size68247
+Node: strings71207
+Node: strip73657
+Node: c++filt79302
+Ref: c++filt-Footnote-184355
+Node: addr2line84469
+Node: nlmconv87850
+Node: windres90558
+Node: dlltool96677
+Node: def file format107898
+Node: readelf109831
+Node: Common Options114715
+Node: Selecting The Target System115761
+Node: Target Selection116705
+Node: Architecture Selection118826
+Node: Reporting Bugs119702
+Node: Bug Criteria120481
+Node: Bug Reporting121040
+Node: GNU Free Documentation License128220
+Node: Index147857
 
 End Tag Table
 

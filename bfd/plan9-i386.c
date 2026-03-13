@@ -78,8 +78,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 #define MY_BFD_TARGET
 #define MY_object_p MY(object_p)
 #define MY_write_object_contents MY(write_object_contents)
-//#define MY_get_symtab_upper_bound plan9_i386_get_symtab_upper_bound
-//#define MY_get_symtab plan9_i386_get_symtab
+/* Use custom symbol-table functions to safely handle Plan 9 exec format,
+   which has no a.out-compatible string table and can trigger a
+   stringsize-underflow heap overflow in the generic slurp path.  */
+#define MY_get_symtab_upper_bound MY(get_symtab_upper_bound)
+#define MY_canonicalize_symtab    MY(get_symtab)
 
 static void plan9_swap_exec_header_out (bfd *abfd,
                                         const struct internal_exec *execp,
@@ -444,7 +447,11 @@ some_plan9_object_p (bfd *abfd,
 	obj_reloc_entry_size (abfd) = 1;
 	obj_symbol_entry_size (abfd) = 1;
 */
-	bfd_get_symcount (abfd) = execp->a_syms / sizeof (struct external_nlist);
+	/* For native Plan 9 exec the a_syms field is the byte-size of the
+	   Plan 9 symbol table, which is NOT in a.out nlist format.  Setting
+	   symcount to zero here lets the custom slurp determine the real count
+	   (or safely return -1 if the string table is absent).  */
+	bfd_get_symcount (abfd) = 0;
 	obj_reloc_entry_size (abfd) = RELOC_STD_SIZE;
 	obj_symbol_entry_size (abfd) = EXTERNAL_NLIST_SIZE;
 
@@ -484,6 +491,19 @@ some_plan9_object_p (bfd *abfd,
 
 	obj_sym_filepos(abfd) = N_SYMOFF(*execp);
 	obj_str_filepos(abfd) = N_STROFF(*execp);
+
+	/* The generic QMAGIC callback subtracts EXEC_BYTES_SIZE from
+	   execp->a_text.  Correct the symbol-table file positions so they
+	   point to the actual on-disk Plan 9 symbol table:
+	     header (EXEC_BYTES_SIZE) + text_code + data.  */
+	if (N_MAGIC (*execp) == QMAGIC)
+	  {
+	    obj_sym_filepos (abfd) = (file_ptr) EXEC_BYTES_SIZE
+	                             + (file_ptr) execp->a_text
+	                             + (file_ptr) execp->a_data;
+	    obj_str_filepos (abfd) = obj_sym_filepos (abfd)
+	                             + (file_ptr) execp->a_syms;
+	  }
 
 	/* Now that the segment addresses have been worked out, take a better
 		guess at whether the file is executable.  If the entry point

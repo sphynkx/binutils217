@@ -2633,10 +2633,14 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
         {
           long v = progs_all[i].from.offset;
           if (v == 0)      progs_all[i].as = P9AS_NOP;
-          else if (v < 0)  { progs_all[i].as = P9AS_SUBL;
+          else if (v > 0)  progs_all[i].as = P9AS_SUBL;  /* allocate: SUB from SP */
+          else             { progs_all[i].as = P9AS_ADDL; /* deallocate: ADD to SP */
                              progs_all[i].from.offset = -v; }
-          else             progs_all[i].as = P9AS_ADDL;
-          progs_all[i].to.type = P9D_SP;
+          progs_all[i].to.type   = P9D_SP;
+          progs_all[i].to.index  = P9D_NONE;
+          progs_all[i].to.scale  = 1;
+          progs_all[i].to.offset = 0;
+          progs_all[i].to.sym    = -1;
         }
     }
 

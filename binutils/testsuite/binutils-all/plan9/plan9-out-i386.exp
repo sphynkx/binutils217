@@ -123,3 +123,60 @@ if { [regexp {\.bss\s+([0-9a-fA-F]+)} $gotsec -> bsssz]
     send_log "objdump -h output was:\n$gotsec\n"
 }
 
+# -----------------------------------------------------------------------
+# Tests for ADJSP $0x50 → sub $0x50,%esp (regression for ADJSP sign bug).
+#
+# callmain_stack.8 contains:
+#   ATEXT _callmain
+#   ADJSP $0x50   ← positive: allocate 80 bytes from stack
+#   RET
+#
+# Before the fix, positive ADJSP was converted to ADDL (wrong sign),
+# producing add $0x50,%esp (83 c4 50) or similar.  After the fix it must
+# produce sub $0x50,%esp encoded as the 3-byte sequence 83 ec 50.
+# -----------------------------------------------------------------------
+set stack_fixture "$testdir/callmain_stack.8"
+
+# Test 8: objdump -f recognises callmain_stack.8 as plan9-out-i386.
+send_log "Testing: objdump -f on callmain_stack.8\n"
+set got8 [binutils_run $OBJDUMP "-f $stack_fixture"]
+
+if { [regexp "plan9-out-i386" $got8] } {
+    pass "objdump -f recognizes callmain_stack.8 as plan9-out-i386"
+} else {
+    fail "objdump -f does not recognize callmain_stack.8 as plan9-out-i386"
+    send_log "Output was: $got8\n"
+}
+
+# Test 9: disassembly of callmain_stack.8 contains sub $0x50,%esp (83 ec 50).
+# We use objdump -d and check for the hex bytes in the output.
+send_log "Testing: callmain_stack.8 encodes ADJSP \$0x50 as sub \$0x50,%esp\n"
+set got9 [binutils_run $OBJDUMP "-d $stack_fixture"]
+
+if { [regexp {83\s+ec\s+50} $got9] } {
+    pass "ADJSP \$0x50 correctly encoded as sub \$0x50,%esp (83 ec 50)"
+} else {
+    fail "ADJSP \$0x50 not encoded as sub \$0x50,%esp -- got wrong machine code"
+    send_log "objdump -d output was:\n$got9\n"
+}
+
+# Test 10: disassembly must NOT contain the incorrect add $0x50,%esp (83 c4 50).
+send_log "Testing: callmain_stack.8 does not contain add \$0x50,%esp (wrong sign)\n"
+if { ![regexp {83\s+c4\s+50} $got9] } {
+    pass "callmain_stack.8 does not contain incorrect add \$0x50,%esp"
+} else {
+    fail "callmain_stack.8 contains add \$0x50,%esp -- ADJSP sign is still wrong"
+    send_log "objdump -d output was:\n$got9\n"
+}
+
+# Test 11: disassembly must NOT contain the incorrect LEA substitution
+# (8d 84 24 c0 ff ff ff = lea 0xffffffc0(%esp),%eax).
+send_log "Testing: callmain_stack.8 does not contain incorrect lea substitution\n"
+if { ![regexp {8d\s+84\s+24} $got9] } {
+    pass "callmain_stack.8 does not contain incorrect lea substitution"
+} else {
+    fail "callmain_stack.8 contains lea substitution -- stack adjustment is wrong"
+    send_log "objdump -d output was:\n$got9\n"
+}
+
+
