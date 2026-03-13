@@ -498,11 +498,11 @@ some_plan9_object_p (bfd *abfd,
 	     header (EXEC_BYTES_SIZE) + text_code + data.  */
 	if (N_MAGIC (*execp) == QMAGIC)
 	  {
-	    obj_sym_filepos (abfd) = (file_ptr) EXEC_BYTES_SIZE
-	                             + (file_ptr) execp->a_text
-	                             + (file_ptr) execp->a_data;
-	    obj_str_filepos (abfd) = obj_sym_filepos (abfd)
-	                             + (file_ptr) execp->a_syms;
+	    file_ptr sym_off = (file_ptr) EXEC_BYTES_SIZE
+	                       + (file_ptr) execp->a_text
+	                       + (file_ptr) execp->a_data;
+	    obj_sym_filepos (abfd) = sym_off;
+	    obj_str_filepos (abfd) = sym_off + (file_ptr) execp->a_syms;
 	  }
 
 	/* Now that the segment addresses have been worked out, take a better
