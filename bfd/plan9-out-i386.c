@@ -386,9 +386,11 @@ p9obj_slurp_symtab (bfd *abfd)
             syms[i].flags = BSF_LOCAL;
 
           /* If section is undefined (we never saw ATEXT/ADATA/AGLOBL for it),
-             mark as undefined symbol.  */
+             the symbol is an undefined external reference.  BSF_GLOBAL with
+             bfd_und_section_ptr is the correct representation; BSF_WEAK is
+             not appropriate here.  */
           if (found_syms[i].section == bfd_und_section_ptr)
-            syms[i].flags |= BSF_WEAK;  /* undefined external */
+            syms[i].flags = BSF_GLOBAL;  /* undefined external reference */
         }
 
       tdata->symbols  = syms;
@@ -450,11 +452,21 @@ plan9_out_i386_object_p (bfd *abfd)
       return NULL;
     }
 
-  /* Check ANAME opcode (0x7e, 0x00) and isobjfile heuristic */
-  if (!((buf[0] == 0x7e && buf[1] == 0x00
-         && buf[3] == 1 && buf[4] == '<')
-        || (buf[0] == 0x7e && buf[1] == 0x00
-            && buf[2] == 1 && buf[3] == '<')))
+  /* Validate the ANAME opcode and the isobjfile heuristic from 9front.
+     9front's isobjfile() reads 5 bytes and checks:
+       buf[2]==1 && buf[3]=='<'  (older: 1-byte opcode, sym_idx=1, name starts '<')
+     OR
+       buf[3]==1 && buf[4]=='<'  (i386: 2-byte opcode=0x007e, sym_idx=1, name starts '<')
+
+     For i386 .8 files the opcode is always 0x007e (ANAME=126 LE), so bytes 0-1
+     must be 0x7e,0x00.  Bytes 3-4 check that the first ANAME record has symbol
+     index 1 and a name beginning with '<' (Plan 9 file-history path segment).
+     The alternative (buf[2]==1, buf[3]=='<') also requires opcode 0x007e, so it
+     would fire only if the type byte at [2] happened to be 1 – very unlikely for
+     real i386 .8 files, but kept for symmetry with isobjfile().  */
+  if (!(buf[0] == 0x7e && buf[1] == 0x00
+        && ((buf[3] == 1 && buf[4] == '<')
+            || (buf[2] == 1 && buf[3] == '<'))))
     {
       bfd_set_error (bfd_error_wrong_format);
       return NULL;
