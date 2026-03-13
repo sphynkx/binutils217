@@ -123,6 +123,65 @@ MY (finish_dynamic_link) (bfd *output_bfd, struct bfd_link_info *info)
 }
 
 
+/* Plan 9-specific archive symbol-table reader.
+   9front archives use the standard !<arch> magic but the __.SYMDEF
+   member stores (fileoffset, symname) pairs that are not compatible
+   with the BSD (count, (nameoff,fileoff)*, strings) layout expected
+   by bfd_slurp_bsd_armap.  We skip the SYMDEF member so that the
+   archive container is recognised successfully.  The linker scans
+   all members to resolve undefined references (bfd_has_map = FALSE).  */
+
+static bfd_boolean
+plan9_i386_slurp_armap (bfd *abfd)
+{
+  char nextname[17];
+  struct areltdata *mapdata;
+  file_ptr newpos;
+
+  /* Peek at the first 16 bytes (the ar_name field of the first member). */
+  if (bfd_bread (nextname, 16, abfd) != 16)
+    {
+      bfd_has_map (abfd) = FALSE;
+      return TRUE;   /* empty archive */
+    }
+  nextname[16] = '\0';
+
+  if (bfd_seek (abfd, (file_ptr) -16, SEEK_CUR) != 0)
+    return FALSE;
+
+  /* If the first member is a SYMDEF, skip it without parsing its
+     content (Plan 9 SYMDEF format is not BSD-compatible).  */
+  if (strncmp (nextname, "__.SYMDEF       ", 16) == 0
+      || strncmp (nextname, "__.SYMDEF/      ", 16) == 0
+      || strncmp (nextname, "SYMDEF          ", 16) == 0)
+    {
+      mapdata = (struct areltdata *) _bfd_read_ar_hdr (abfd);
+      if (mapdata == NULL)
+        {
+          /* Header unreadable – treat this as wrong format.  */
+          bfd_set_error (bfd_error_wrong_format);
+          return FALSE;
+        }
+
+      /* Skip the SYMDEF content and align to even boundary.  */
+      newpos = bfd_tell (abfd) + (file_ptr) mapdata->parsed_size;
+      if (newpos & 1)
+        newpos++;
+      bfd_release (abfd, mapdata);
+
+      if (bfd_seek (abfd, newpos, SEEK_SET) != 0)
+        return FALSE;
+
+      bfd_ardata (abfd)->first_file_filepos = newpos;
+    }
+
+  /* No symbol map: the linker will scan all members.  */
+  bfd_has_map (abfd) = FALSE;
+  return TRUE;
+}
+
+#define MY_slurp_armap plan9_i386_slurp_armap
+
 #define	N_BADMAG(x) (N_MAGIC(x) != QMAGIC && N_MAGIC(x) != OMAGIC)
 #define	MY_backend_data &MY(backend_data)
 
