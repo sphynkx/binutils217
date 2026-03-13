@@ -192,86 +192,74 @@ void
 obj_plan9_frob_file_after_relocs (void)
 {
   asection *sec;
+
 #ifdef DEBUG_PLAN9
-	fprintf (stderr, "DBG plan9: frob_file_after_relocs called (OUTPUT_FLAVOR=%d)\n",
+  fprintf (stderr,
+           "DBG plan9: frob_file_after_relocs called (OUTPUT_FLAVOR=%d)\n",
            (int) OUTPUT_FLAVOR);
 #endif
+
+  /* For Plan 9 a.out (REL-style) relocations, GAS/BFD expect the addend to live
+     in the relocated word. When fixup processing collapses a relocation against
+     a local symbol into a section symbol, the addend typically moves into
+     fx_offset. Ensure the in-place word contains that addend, NOT the section VMA.
+     Writing section->vma here breaks addresses for .data/.rodata references. */
+  if (OUTPUT_FLAVOR != bfd_target_aout_flavour)
+    return;
+
   for (sec = stdoutput->sections; sec != NULL; sec = sec->next)
     {
       segment_info_type *seginfo = seg_info (sec);
       fixS *fixp;
-      int k = 0;
 
       if (seginfo == NULL)
         continue;
 
       for (fixp = seginfo->fix_root; fixp != NULL; fixp = fixp->fx_next)
         {
-          symbolS *sym = fixp->fx_addsy;
-          const char *symname = sym ? S_GET_NAME (sym) : "(null)";
-          const char *symseg = "(noseg)";
+          symbolS *sym;
+          char *p;
+          valueT v;
 
-		/* If relocation is against a section symbol, ensure the in-place addend
-		   contains the section VMA, to match a.out "symbols from 0" semantics. */
-		if (!fixp->fx_done
-			&& !fixp->fx_pcrel
-			&& fixp->fx_size == 4
-			&& fixp->fx_addsy != NULL
-			&& symbol_section_p (fixp->fx_addsy))
-		  {
-			segT sseg = S_GET_SEGMENT (fixp->fx_addsy);
-			valueT v = 0;
-			char *p = fixp->fx_frag->fr_literal + fixp->fx_where;
+          if (fixp->fx_done)
+            continue;
 
-			if (sseg == text_section)
-			  v = text_section->vma;
-			else if (sseg == data_section)
-			  v = data_section->vma;
-			else if (sseg == bss_section)
-			  v = bss_section->vma;
-			else
-			  v = 0;
+          /* Only handle absolute 32-bit REL addends.  */
+          if (fixp->fx_pcrel)
+            continue;
+          if (fixp->fx_size != 4)
+            continue;
 
-			/* Write little-endian 32-bit. */
-			p[0] = (v      ) & 0xff;
-			p[1] = (v >>  8) & 0xff;
-			p[2] = (v >> 16) & 0xff;
-			p[3] = (v >> 24) & 0xff;
+          sym = fixp->fx_addsy;
+          if (sym == NULL)
+            continue;
+
+          /* Only when relocation is against a section symbol (.text/.data/.bss). */
+          if (!symbol_section_p (sym))
+            continue;
+
+          /* Put the addend back into the relocated word. */
+          p = fixp->fx_frag->fr_literal + fixp->fx_where;
+          v = fixp->fx_offset;
+
+          /* Plan 9 i386 is little-endian. */
+          p[0] = (v      ) & 0xff;
+          p[1] = (v >>  8) & 0xff;
+          p[2] = (v >> 16) & 0xff;
+          p[3] = (v >> 24) & 0xff;
+
 #ifdef DEBUG_PLAN9
-			fprintf (stderr,
-					 "DBG plan9: patched in-place addend to %#lx for %s at where=%ld\n",
-					 (unsigned long) v,
-					 (sseg == text_section ? ".text" : (sseg == data_section ? ".data" : ".bss")),
-					 (long) fixp->fx_where);
-#endif
-		  }
-
-          if (sym)
-            {
-              segT sseg = S_GET_SEGMENT (sym);
-              if (sseg == text_section) symseg = ".text";
-              else if (sseg == data_section) symseg = ".data";
-              else if (sseg == bss_section) symseg = ".bss";
-              else if (sseg == absolute_section) symseg = "ABS";
-              else if (sseg == undefined_section) symseg = "UND";
-            }
-
-          if (k < 20)
-#ifdef DEBUG_PLAN9
+          {
+            segT sseg = S_GET_SEGMENT (sym);
+            const char *symseg = (sseg == text_section ? ".text"
+                                : sseg == data_section ? ".data"
+                                : sseg == bss_section  ? ".bss"
+                                : "(other)");
             fprintf (stderr,
-                     "DBG plan9: fix sec=%s where=%ld size=%d pcrel=%d done=%d off=%ld addn=%ld sym=%s symseg=%s sectsym=%d\n",
-                     sec->name,
-                     (long) fixp->fx_where,
-                     fixp->fx_size,
-                     fixp->fx_pcrel,
-                     fixp->fx_done,
-                     (long) fixp->fx_offset,
-                     (long) fixp->fx_addnumber,
-                     symname,
-                     symseg,
-                     (sym && symbol_section_p (sym)) ? 1 : 0);
+                     "DBG plan9: wrote in-place addend=%#lx for sectsym=%s at sec=%s where=%ld\n",
+                     (unsigned long) v, symseg, sec->name, (long) fixp->fx_where);
+          }
 #endif
-          k++;
         }
     }
 }
