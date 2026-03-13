@@ -316,6 +316,21 @@ p9obj_slurp_symtab (bfd *abfd)
 
               strtab_used += namelen + 1;
 
+              /* For D_EXTERN symbols, deduplicate by name: a single external
+                 symbol can appear under multiple slot indices within one .8
+                 file (e.g. both ADATA and AGLOBL reference the same global via
+                 different ANAME slots).  Only add the first occurrence to avoid
+                 "multiple definition" errors from the linker.  */
+              if (dtype == P9OBJ_D_EXTERN)
+                {
+                  unsigned int prev_idx;
+                  for (prev_idx = 0; prev_idx < nsyms_found; prev_idx++)
+                    if (found_syms[prev_idx].dtype == P9OBJ_D_EXTERN
+                        && found_syms[prev_idx].name != NULL
+                        && strcmp (found_syms[prev_idx].name, name) == 0)
+                      goto skip_add_extern;
+                }
+
               /* Add to found_syms list */
               if (nsyms_found >= found_cap)
                 {
@@ -328,6 +343,7 @@ p9obj_slurp_symtab (bfd *abfd)
                   found_syms = newf;
                 }
               found_syms[nsyms_found++] = h[sidx];
+            skip_add_extern:;
             }
           else if ((dtype == P9OBJ_D_FILE || dtype == P9OBJ_D_FILE1)
                    && sidx < 256)
@@ -371,10 +387,15 @@ p9obj_slurp_symtab (bfd *abfd)
 
           if (newsec != NULL)
             {
-              /* Update section in found_syms for this sym_idx */
+              /* Update section in found_syms for this symbol.
+                 Search by name via h[] because after D_EXTERN deduplication
+                 the found_syms entry may have a different slot index than the
+                 one used in the current instruction record.  */
+              const char *symname = h[sym_idx].name;
               for (i2 = 0; i2 < nsyms_found; i2++)
                 {
-                  if (found_syms[i2].idx == (unsigned int) sym_idx)
+                  if (found_syms[i2].name != NULL
+                      && strcmp (found_syms[i2].name, symname) == 0)
                     {
                       found_syms[i2].section = newsec;
                       break;
@@ -2532,8 +2553,72 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
 
   if (nprogs_all == 0)
     {
-      /* No instructions – empty object */
-      tdata->encoded = 1;
+      /* No text instructions – BSS/data-only object.
+         Still need to lay out BSS and data symbols so that each BSS
+         global gets a unique, non-overlapping offset within the section.
+         Without this, every symbol would stay at value 0 and the linker
+         would map all of them to the same output address.  */
+      long data_total_early = 0, bss_total_early = 0;
+      int isym;
+      unsigned int osym;
+
+      /* Layout data symbols from ADATA records */
+      for (isym = 0; isym < n_int_syms; isym++)
+        {
+          if (int_syms[isym].stype == P9_SDATA)
+            {
+              long data_extent = 0;
+              int drec;
+              for (drec = 0; drec < ndatarecs; drec++)
+                {
+                  if (datarecs[drec].sym_idx == isym)
+                    {
+                      long end = datarecs[drec].offset + datarecs[drec].width;
+                      if (end > data_extent) data_extent = end;
+                    }
+                }
+              int_syms[isym].value = data_total_early;
+              data_total_early += data_extent;
+            }
+        }
+
+      /* Layout BSS symbols: assign each a unique offset using its size */
+      for (isym = 0; isym < n_int_syms; isym++)
+        {
+          if (int_syms[isym].stype == P9_SBSS)
+            {
+              int_syms[isym].value = bss_total_early;
+              bss_total_early += int_syms[isym].bss_size;
+            }
+        }
+
+      /* Propagate computed offsets and sections back to tdata->symbols */
+      for (osym = 0; osym < tdata->nsyms; osym++)
+        {
+          const char *sname = tdata->symbols[osym].name;
+          for (isym = 0; isym < n_int_syms; isym++)
+            if (strcmp (int_syms[isym].name, sname) == 0)
+              {
+                tdata->symbols[osym].value = (bfd_vma) int_syms[isym].value;
+                switch (int_syms[isym].stype)
+                  {
+                  case P9_SDATA:
+                    tdata->symbols[osym].section =
+                      bfd_get_section_by_name (abfd, ".data");
+                    break;
+                  case P9_SBSS:
+                    tdata->symbols[osym].section =
+                      bfd_get_section_by_name (abfd, ".bss");
+                    break;
+                  default: break;
+                  }
+                break;
+              }
+        }
+
+      tdata->data_size = (bfd_size_type) data_total_early;
+      tdata->bss_size  = (bfd_size_type) bss_total_early;
+      tdata->encoded   = 1;
       free (datarecs);
       free (progs_all);
       return 1;

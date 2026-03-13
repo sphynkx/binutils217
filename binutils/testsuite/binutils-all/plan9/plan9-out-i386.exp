@@ -51,3 +51,75 @@ if { [regexp "main" $got] } {
     fail "nm does not find 'main' symbol in callmain.8"
     send_log "Output was: $got\n"
 }
+
+# -----------------------------------------------------------------------
+# Tests for AGLOBL BSS sizing (regression for BSS symbol aliasing bug).
+#
+# argv0.8 is a BSS-only object containing two AGLOBL declarations:
+#   AGLOBL argv0, $4   (argv0 at BSS offset 0, size 4)
+#   AGLOBL _tos,  $4   (_tos  at BSS offset 4, size 4)
+#
+# Before the fix, both symbols had value 0 (the early-return path in
+# p9obj_encode_file skipped BSS layout for files with no ATEXT records).
+# After the fix they must have distinct, non-overlapping addresses.
+# -----------------------------------------------------------------------
+set bss_fixture "$testdir/argv0.8"
+
+# Test 4: objdump -f recognizes argv0.8 as plan9-out-i386.
+send_log "Testing: objdump -f on argv0.8\n"
+set got4 [binutils_run $OBJDUMP "-f $bss_fixture"]
+
+if { [regexp "plan9-out-i386" $got4] } {
+    pass "objdump -f recognizes argv0.8 as plan9-out-i386"
+} else {
+    fail "objdump -f does not recognize argv0.8 as plan9-out-i386"
+    send_log "Output was: $got4\n"
+}
+
+# Test 5: nm finds both argv0 and _tos in argv0.8.
+send_log "Testing: nm on argv0.8\n"
+set gotnm [binutils_run $NM "$bss_fixture"]
+
+if { [regexp "argv0" $gotnm] && [regexp "_tos" $gotnm] } {
+    pass "nm finds 'argv0' and '_tos' in argv0.8"
+} else {
+    fail "nm does not find expected BSS symbols in argv0.8"
+    send_log "Output was: $gotnm\n"
+}
+
+# Test 6: argv0 and _tos must have DIFFERENT addresses (non-overlapping BSS).
+# nm output is "VALUE TYPE NAME"; parse the hex values for both symbols.
+send_log "Testing: BSS symbols argv0 and _tos have distinct addresses\n"
+set addr_argv0 -1
+set addr_tos   -1
+
+foreach line [split $gotnm "\n"] {
+    if { [regexp {^([0-9a-fA-F]+)\s+[Bb]\s+argv0\s*$} $line -> v] } {
+        scan $v %x addr_argv0
+    }
+    if { [regexp {^([0-9a-fA-F]+)\s+[Bb]\s+_tos\s*$} $line -> v] } {
+        scan $v %x addr_tos
+    }
+}
+
+if { $addr_argv0 >= 0 && $addr_tos >= 0 && $addr_argv0 != $addr_tos } {
+    pass "BSS symbols argv0 and _tos have distinct non-overlapping addresses"
+} else {
+    fail "BSS symbols argv0 and _tos overlap (addr_argv0=$addr_argv0, addr_tos=$addr_tos)"
+    send_log "nm output was:\n$gotnm\n"
+}
+
+# Test 7: the BSS section of argv0.8 must have non-zero size (>= 8 bytes).
+send_log "Testing: objdump -h shows non-zero .bss size in argv0.8\n"
+set gotsec [binutils_run $OBJDUMP "-h $bss_fixture"]
+
+# The .bss line in objdump -h contains the size as the second hex field.
+# Example: "  2 .bss          00000008  00000000  00000000  00000034  2**2"
+if { [regexp {\.bss\s+([0-9a-fA-F]+)} $gotsec -> bsssz]
+     && [scan $bsssz %x bssval] == 1 && $bssval >= 8 } {
+    pass "argv0.8 .bss section has correct non-zero size"
+} else {
+    fail "argv0.8 .bss section has unexpected size"
+    send_log "objdump -h output was:\n$gotsec\n"
+}
+
