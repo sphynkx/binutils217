@@ -1,0 +1,53 @@
+# Test suite for Plan 9 i386 object file (.8 format) BFD backend.
+# Copyright (C) 2024 Free Software Foundation, Inc.
+#
+# This file is part of the GNU Binutils.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# Only run these tests for an i386 plan9 target.
+if { ![istarget i*86-*-plan9*] } {
+    return
+}
+
+set testdir "$srcdir/$subdir"
+set fixture "$testdir/callmain.8"
+
+# Test 1: objdump -f recognizes the file format.
+send_log "Testing: objdump -f on callmain.8\n"
+set got [binutils_run $OBJDUMP "-f $fixture"]
+
+if { [regexp "plan9-out-i386" $got] } {
+    pass "objdump -f recognizes plan9-out-i386 format"
+} else {
+    fail "objdump -f does not recognize plan9-out-i386 format"
+    send_log "Output was: $got\n"
+}
+
+# Test 2: nm works and finds at least one symbol.
+send_log "Testing: nm on callmain.8\n"
+set got [binutils_run $NM "$fixture"]
+
+if { [string length $got] > 0 && ![regexp "no symbols" $got]
+     && ![regexp "File format not recognized" $got] } {
+    pass "nm works on plan9-out-i386 object file"
+} else {
+    fail "nm failed on plan9-out-i386 object file"
+    send_log "Output was: $got\n"
+}
+
+# Test 3: nm finds specific symbols (main, _callmain, exits).
+if { [regexp "main" $got] } {
+    pass "nm finds 'main' symbol in callmain.8"
+} else {
+    fail "nm does not find 'main' symbol in callmain.8"
+    send_log "Output was: $got\n"
+}
