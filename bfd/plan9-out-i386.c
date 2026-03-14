@@ -2725,6 +2725,16 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
             (a).offset += cur_auto_size;                                     \
         } while (0)
 
+        /* Debug trace for PARAM/AUTO adjustment */
+        if (progs_all[i].from.type == P9D_AUTO || progs_all[i].from.type == P9D_PARAM
+            || progs_all[i].from.type == P9D_AUTO+P9D_INDIR || progs_all[i].from.type == P9D_PARAM+P9D_INDIR
+            || progs_all[i].to.type == P9D_AUTO || progs_all[i].to.type == P9D_PARAM
+            || progs_all[i].to.type == P9D_AUTO+P9D_INDIR || progs_all[i].to.type == P9D_PARAM+P9D_INDIR)
+          fprintf(stderr, "DBG adj[%d] as=%d from.type=%d from.off=%ld to.type=%d to.off=%ld  (auto_size=%ld)\n",
+                  i, (int)progs_all[i].as,
+                  (int)progs_all[i].from.type, progs_all[i].from.offset,
+                  (int)progs_all[i].to.type, progs_all[i].to.offset,
+                  cur_auto_size);
         P9_ADJOFF (progs_all[i].from);
         P9_ADJOFF (progs_all[i].to);
 #undef P9_ADJOFF
