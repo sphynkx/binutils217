@@ -228,3 +228,49 @@ if { [regexp "etext" $got14] } {
     send_log "Output was: $got14\n"
 }
 
+# -----------------------------------------------------------------------
+# Tests for real 9front libc callmain_9front.8 (606 bytes from 9front libc.a).
+#
+# The real 9front callmain.8 uses the Plan 9 ATEXT convention: the frame
+# size (auto allocation) is stored in the ATEXT to.offset field (0x50 = 80)
+# rather than as a separate ADJSP instruction.  The BFD backend must
+# synthesise the ADJSP from the ATEXT auto-size so that _callmain's
+# prologue starts with sub $0x50,%esp (83 ec 50), not with a spurious
+# lea instruction.
+# -----------------------------------------------------------------------
+set front_fixture "$testdir/callmain_9front.8"
+
+# Test 15: objdump -f recognises callmain_9front.8 as plan9-out-i386.
+send_log "Testing: objdump -f on callmain_9front.8\n"
+set got15 [binutils_run $OBJDUMP "-f $front_fixture"]
+
+if { [regexp "plan9-out-i386" $got15] } {
+    pass "objdump -f recognizes callmain_9front.8 as plan9-out-i386"
+} else {
+    fail "objdump -f does not recognize callmain_9front.8 as plan9-out-i386"
+    send_log "Output was: $got15\n"
+}
+
+# Test 16: disassembly of callmain_9front.8 contains sub $0x50,%esp (83 ec 50).
+# The ATEXT auto-size must be converted to ADJSP -> sub to allocate the frame.
+send_log "Testing: callmain_9front.8 _callmain prologue contains sub \$0x50,%esp\n"
+set got16 [binutils_run $OBJDUMP "-d $front_fixture"]
+
+if { [regexp {83\s+ec\s+50} $got16] } {
+    pass "callmain_9front.8 contains sub \$0x50,%esp (ATEXT auto-size synthesised correctly)"
+} else {
+    fail "callmain_9front.8 missing sub \$0x50,%esp -- ATEXT auto-size not synthesised"
+    send_log "objdump -d output was:\n$got16\n"
+}
+
+# Test 17: the sub must be the FIRST instruction of _callmain (at offset 0).
+# Before the fix, the first instruction was 8d 84 24 c0 ff ff ff (lea -0x40(%esp),%eax)
+# because no stack allocation was inserted before the function body.
+send_log "Testing: callmain_9front.8 _callmain first instruction is sub (not lea)\n"
+if { [regexp {0:\s+83\s+ec\s+50} $got16] } {
+    pass "callmain_9front.8 _callmain first instruction is sub \$0x50,%esp (not lea)"
+} else {
+    fail "callmain_9front.8 _callmain first instruction is not sub \$0x50,%esp"
+    send_log "objdump -d output was:\n$got16\n"
+}
+

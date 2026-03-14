@@ -2415,6 +2415,39 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
             /* Store function sym idx in a spare field for later */
             progs[nprogs].pc   = (cur_text_sym >= 0) ? cur_text_sym : -1;
             nprogs++;
+
+            /* In Plan 9 object format, the ATEXT instruction's to.offset
+               holds the auto (stack frame) size.  This is the size the Plan 9
+               linker (8l) uses to synthesise ADJSP at the start of every
+               function: TEXT foo(SB),$N  →  ADJSP $N  (= sub $N,%esp).
+               If the .8 file contains no explicit ADJSP instruction (which is
+               the case for real 9front libc objects), we inject one here so
+               the disassembly shows the correct stack allocation.
+               The ADJSP→SUBL/ADDL/NOP conversion is handled later in the
+               ADJSP pass below.  */
+            if (to_a.offset > 0)
+              {
+                if (nprogs >= progs_cap)
+                  {
+                    progs_cap *= 2;
+                    p9_Prog *np = (p9_Prog *) realloc (progs,
+                                    progs_cap * sizeof(p9_Prog));
+                    if (!np) goto out_err;
+                    progs = np;
+                  }
+                memset (&progs[nprogs], 0, sizeof(p9_Prog));
+                progs[nprogs].as            = P9AS_ADJSP;
+                progs[nprogs].from.type     = P9D_CONST;
+                progs[nprogs].from.offset   = to_a.offset;
+                progs[nprogs].from.sym      = -1;
+                progs[nprogs].from.index    = P9D_NONE;
+                progs[nprogs].from.scale    = 1;
+                progs[nprogs].to.type       = P9D_NONE;
+                progs[nprogs].to.sym        = -1;
+                progs[nprogs].pcond_idx     = -1;
+                progs[nprogs].back          = 2;
+                nprogs++;
+              }
           }
         /* ---- AGLOBL: BSS declaration ---- */
         else if (opcode == P9OBJ_AGLOBL)
