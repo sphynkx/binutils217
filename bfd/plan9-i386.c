@@ -967,8 +967,15 @@ MY(slurp_symbol_table) (bfd *abfd)
 
   str_size = bfd_getb32 (lenbuf);
 
-  /* In a.out the length includes the 4-byte length itself.
-     Accept 0/4 as empty.  */
+  /* In a.out the string table size includes the 4-byte size field itself.
+     n_strx values in nlist are absolute offsets from the start of the string
+     table (so n_strx=4 is the first real string, right after the 4-byte size
+     field).  We allocate the full table size + 1 guard byte and read the
+     payload into strings[4..str_size-1], leaving strings[0..3] zero.  This
+     matches the convention in aoutx.h where obj_aout_external_strings points
+     to the full table and "strings + n_strx" is used directly.
+
+     Accept 0 or 4 as empty (no strings).  */
   if (str_size < 4)
     {
       /* Treat as empty strings.  */
@@ -979,23 +986,29 @@ MY(slurp_symbol_table) (bfd *abfd)
     {
       bfd_size_type payload = str_size - 4;
 
-      strings = (char *) bfd_malloc (payload);
+      /* Allocate full table size + 1 null guard byte.  */
+      strings = (char *) bfd_malloc (str_size + 1);
       if (strings == NULL)
         {
           free (syms);
           return false;
         }
 
+      /* Zero strings[0..3] (the size-field area); n_strx=0 → empty name.
+         Use memset to ensure all 4 bytes are zero, not just strings[0].  */
+      memset (strings, 0, 4);
+
+      /* Read payload into strings[4..str_size-1].  */
       if (payload != 0
-          && bfd_bread ((void *) strings, payload, abfd) != payload)
+          && bfd_bread ((void *) (strings + 4), payload, abfd) != payload)
         {
           free (strings);
           free (syms);
           return false;
         }
 
-      /* For convenience, keep external_string_size as payload bytes.  */
-      str_size = payload;
+      /* Null guard at end.  */
+      strings[str_size] = '\0';
     }
 
   /* Build cached canonical symbols.  */
@@ -1024,17 +1037,18 @@ MY(slurp_symbol_table) (bfd *abfd)
       cached[i].symbol.the_bfd = abfd;
       cached[i].symbol.value = value;
 
-      /* Name resolution.  */
+      /* Name resolution.  n_strx is an absolute offset from the start of the
+         string table; strings[0..3] are zero (size-field area), so n_strx=0
+         gives the empty string and n_strx>=4 gives the real name.
+         Validate against total str_size.  */
       if (strings == NULL || n_strx == 0)
         {
           cached[i].symbol.name = "";
         }
-      else if (n_strx >= str_size)
+      else if (n_strx > str_size)
         {
-          /* Bad string index => wrong format.  */
+          /* Bad string index - treat as unnamed rather than crashing.  */
           cached[i].symbol.name = "";
-          /* You can also choose to fail hard here:
-             bfd_set_error (bfd_error_wrong_format); ... */
         }
       else
         {
@@ -1076,7 +1090,12 @@ MY(slurp_symbol_table) (bfd *abfd)
   obj_aout_symbols (abfd) = cached;
   bfd_get_symcount (abfd) = sym_count;
 
-  /* Make generic a.out code happy: store external tables too.  */
+  /* Make generic a.out code happy: store external tables too.
+     obj_aout_external_strings must point to the full string table buffer
+     (including the 4-byte size-field area) so that linker code in aoutx.h
+     can use "strings + n_strx" directly with absolute n_strx values.
+     obj_aout_external_string_size is the total string table size (including
+     the 4-byte size field), matching what aoutx.h stores.  */
   obj_aout_external_syms (abfd) = syms;
   obj_aout_external_sym_count (abfd) = sym_count;
   obj_aout_external_strings (abfd) = strings;
