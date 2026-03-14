@@ -286,3 +286,53 @@ if { ![regexp {8d\s+84\s+24\s+c0\s+ff\s+ff\s+ff} $got15] } {
     send_log "objdump -d output was:\n$got15\n"
 }
 
+# -----------------------------------------------------------------------
+# Tests for correct D_PARAM adjustment (fn_ptr at 0x54, not 0x50).
+#
+# In the x86 calling convention, after CALL pushes the return address,
+# the first function parameter (D_PARAM 0) is at old_SP+4, not old_SP.
+# After sub $0x50,%esp, D_PARAM 0 must map to new_SP+0x54, not 0x50.
+#
+# The bug: D_PARAM offsets were adjusted by +auto_size only, placing the
+# function pointer at [ESP+0x50] = the return-address slot (== 0 in the
+# 9front startup JMP convention), causing _callmain to jump to pc=0.
+#
+# The fix: D_PARAM offsets are adjusted by +auto_size+4 to account for
+# the 4-byte return address between old_SP and the first parameter.
+#
+# Expected: 8b 44 24 54  mov 0x54(%esp),%eax  (D_PARAM 0 fn_ptr at SP+0x54)
+#           ff d0         call *%eax
+# -----------------------------------------------------------------------
+
+# Test 19: D_PARAM 0 (fn_ptr) must be at 0x54(%esp) after adjustment.
+# Bytes: 8b 44 24 54 = mov 0x54(%esp),%eax  (D_PARAM 0 + 0x50 + 4 = 0x54).
+send_log "Testing: callmain.8 D_PARAM 0 fn_ptr adjusted to 0x54(%esp)\n"
+if { [regexp {8b\s+44\s+24\s+54} $got15] } {
+    pass "callmain.8 D_PARAM 0 fn_ptr at 0x54(%esp) (D_PARAM 0 + auto_size + 4)"
+} else {
+    fail "callmain.8 D_PARAM 0 fn_ptr not at 0x54(%esp) -- D_PARAM offset wrong"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 20: the instruction at 0x54(%esp) must be immediately followed by
+# call *%eax (ff d0), confirming it is the indirect call through fn_ptr.
+# Bytes: 8b 44 24 54 ... ff d0 (two consecutive instructions).
+send_log "Testing: callmain.8 mov 0x54(%esp),%eax immediately precedes call *%eax\n"
+if { [regexp {8b\s+44\s+24\s+54[^\n]*\n[^\n]*ff\s+d0} $got15] } {
+    pass "callmain.8 fn_ptr load (8b 44 24 54) immediately precedes call *%eax (ff d0)"
+} else {
+    fail "callmain.8 fn_ptr load is not immediately before call *%eax"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 21: the wrong slot (0x50, == return address) must NOT be used.
+# 8b 44 24 50 = mov 0x50(%esp),%eax would read the return address (== 0),
+# causing pc=0x0 crash on 9front when the startup JMPs (not CALLs) _callmain.
+send_log "Testing: callmain.8 does not contain mov 0x50(%esp),%eax (wrong slot)\n"
+if { ![regexp {8b\s+44\s+24\s+50} $got15] } {
+    pass "callmain.8 does not contain mov 0x50(%esp),%eax (return-addr slot not used)"
+} else {
+    fail "callmain.8 contains mov 0x50(%esp),%eax -- fn_ptr still reads return addr slot"
+    send_log "objdump -d output was:\n$got15\n"
+}
+

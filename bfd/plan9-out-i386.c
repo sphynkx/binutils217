@@ -2687,14 +2687,17 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
 
   /* ---- Adjust D_AUTO / D_PARAM offsets by the function auto (frame) size ----
      In Plan 9 .8 object files, D_AUTO (63) and D_PARAM (64) address offsets
-     are FP-relative: measured from the virtual frame pointer, which equals SP
-     at function entry (before the stack frame is pushed).  After the BFD
-     backend synthesises ADJSP $N (sub $N,%esp), all D_AUTO and D_PARAM
-     references must be shifted by +N to become current-SP-relative, matching
-     the semantics 9front 8l applies in its span() function.
-
-     Example: D_AUTO offset -0x40 with auto_size 0x50 → SP+(-0x40+0x50)=SP+0x10
-     i.e. lea 0x10(%esp),%eax (8d 44 24 10) instead of lea -0x40(%esp),%eax.  */
+     are stack-relative but use different reference points:
+       D_AUTO: offset from old_SP (SP at function entry).  Negative offsets
+               point into the local variable area.
+               After sub $N,%esp: new_SP + (off + N)
+               Example: D_AUTO -0x40 with N=0x50 → new_SP+0x10
+       D_PARAM: offset from old_SP+4 (first argument, one word above the return
+                address pushed by CALL).  Non-negative offsets.
+                After sub $N,%esp: new_SP + (off + N + 4)
+                Example: D_PARAM 0 with N=0x50 → new_SP+0x54
+     After the BFD backend synthesises ADJSP $N (sub $N,%esp), all references
+     must be converted to current-SP-relative, matching 9front 8l span().  */
   { long cur_auto_size = 0;
     for (i = 0; i < nprogs_all; i++)
       {
@@ -2711,30 +2714,27 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
         if (cur_auto_size <= 0)
           continue;
 
-        /* Adjust D_AUTO and D_PARAM offsets (with or without D_INDIR) */
+        /* Adjust D_AUTO and D_PARAM offsets (with or without D_INDIR).
+           In the x86 calling convention, after CALL pushes a 4-byte return
+           address, the first D_PARAM argument is at old_SP+4.  After
+           sub $N,%esp (frame allocation), SP-relative offsets are:
+             D_AUTO off  → new_SP + (off + auto_size)       (auto: from old_SP)
+             D_PARAM off → new_SP + (off + auto_size + 4)   (param: from old_SP+4)
+           The extra +4 for D_PARAM accounts for the return address slot.   */
 #define P9_ADJOFF(a)                                                          \
         do {                                                                  \
           int _t = (a).type;                                                  \
-          if (_t == P9D_AUTO || _t == P9D_PARAM                              \
-              || _t == (P9D_AUTO + P9D_INDIR)                                \
-              || _t == (P9D_PARAM + P9D_INDIR))                              \
+          if (_t == P9D_AUTO || _t == (P9D_AUTO + P9D_INDIR))                \
             (a).offset += cur_auto_size;                                     \
+          else if (_t == P9D_PARAM || _t == (P9D_PARAM + P9D_INDIR))        \
+            (a).offset += cur_auto_size + 4;                                 \
           /* D_ADDR with index D_AUTO/D_PARAM (LEA of stack variable) */     \
-          if (_t == P9D_ADDR                                                  \
-              && ((a).index == P9D_AUTO || (a).index == P9D_PARAM))          \
+          if (_t == P9D_ADDR && (a).index == P9D_AUTO)                       \
             (a).offset += cur_auto_size;                                     \
+          else if (_t == P9D_ADDR && (a).index == P9D_PARAM)                 \
+            (a).offset += cur_auto_size + 4;                                 \
         } while (0)
 
-        /* Debug trace for PARAM/AUTO adjustment */
-        if (progs_all[i].from.type == P9D_AUTO || progs_all[i].from.type == P9D_PARAM
-            || progs_all[i].from.type == P9D_AUTO+P9D_INDIR || progs_all[i].from.type == P9D_PARAM+P9D_INDIR
-            || progs_all[i].to.type == P9D_AUTO || progs_all[i].to.type == P9D_PARAM
-            || progs_all[i].to.type == P9D_AUTO+P9D_INDIR || progs_all[i].to.type == P9D_PARAM+P9D_INDIR)
-          fprintf(stderr, "DBG adj[%d] as=%d from.type=%d from.off=%ld to.type=%d to.off=%ld  (auto_size=%ld)\n",
-                  i, (int)progs_all[i].as,
-                  (int)progs_all[i].from.type, progs_all[i].from.offset,
-                  (int)progs_all[i].to.type, progs_all[i].to.offset,
-                  cur_auto_size);
         P9_ADJOFF (progs_all[i].from);
         P9_ADJOFF (progs_all[i].to);
 #undef P9_ADJOFF
