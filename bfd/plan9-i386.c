@@ -258,8 +258,11 @@ MY(write_object_contents) (bfd *abfd)
 
   /* When producing a new Plan 9 executable via objcopy/strip, the generic
      a.out copying code may "pack" VMAs starting at 0 (text=0, data=text_size).
-     Restore Plan 9 VMAs before writing the header/contents.  */
+     Restore Plan 9 VMAs before writing the header/contents.
+     Only do this for executables (EXEC_P): relocatable objects (.o files)
+     must keep text VMA = 0 so the linker can place them correctly.  */
   if (bfd_get_arch (abfd) == bfd_arch_i386
+      && (abfd->flags & EXEC_P) != 0
       && obj_textsec (abfd) != NULL
       && obj_datasec (abfd) != NULL
       && obj_bsssec (abfd) != NULL
@@ -655,6 +658,15 @@ MY (object_p) (bfd *abfd)
     return 0;
 
   target = NAME (aout, some_aout_object_p) (abfd, &exec, MY (callback));
+
+  /* some_aout_object_p uses a heuristic to set EXEC_P: it sets EXEC_P
+     whenever a_entry falls within the text segment.  For OMAGIC (relocatable
+     .o files), text starts at VMA 0 and a_entry is 0, so the heuristic
+     incorrectly sets EXEC_P.  OMAGIC in plan9-i386 is always a relocatable
+     object — clear EXEC_P so the linker places symbols correctly.  */
+  if (target != NULL && N_MAGIC (exec) == OMAGIC)
+    abfd->flags &= ~EXEC_P;
+
   return target;
 }
 

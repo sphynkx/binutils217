@@ -350,3 +350,62 @@ if { $seq_ok } {
     send_log "objdump -d output was:\n$got15\n"
 }
 
+# -----------------------------------------------------------------------
+# Tests for OMAGIC (relocatable) plan9-i386 object files.
+#
+# When $bu-as assembles Plan 9 i386 assembly, it produces an OMAGIC (0x107)
+# relocatable object.  In OMAGIC format the text section starts at VMA 0.
+# Because a_entry=0 is within the text segment [0, text_size), the generic
+# some_aout_object_p heuristic incorrectly sets EXEC_P.
+#
+# This caused ld to treat the input object as already-placed (pre-linked),
+# so relocations were skipped and user symbols like 'main' ended up at wrong
+# addresses (e.g. 0x20f8 in BSS instead of inside .text at 0x1020+offset),
+# making indirect calls crash ("page fault 0x20f8 no instruction").
+#
+# After the fix: EXEC_P is cleared for any OMAGIC plan9-i386 object in
+# plan9_i386_object_p, so the linker relocates it normally.
+#
+# The VMA fixup block in write_object_contents is also guarded by EXEC_P:
+# it only applies to executables, not to relocatable objects, so text VMA
+# stays at 0 for .o files.
+#
+# Fixture: reloc_test.o is a hand-crafted minimal OMAGIC plan9-i386 object
+# with one text symbol "main" at VMA 0.  It exercises the EXEC_P reader fix.
+# -----------------------------------------------------------------------
+set reloc_fixture "$testdir/reloc_test.o"
+
+# Test 21: objdump -f on reloc_test.o must recognize plan9-i386 format.
+send_log "Testing: objdump -f on reloc_test.o recognizes format\n"
+set got_reloc [binutils_run $OBJDUMP "-f $reloc_fixture"]
+
+if { [regexp "plan9-i386" $got_reloc] } {
+    pass "objdump -f recognizes reloc_test.o as plan9-i386"
+} else {
+    fail "objdump -f does not recognize reloc_test.o as plan9-i386"
+    send_log "Output was: $got_reloc\n"
+}
+
+# Test 22: reloc_test.o must NOT have EXEC_P set.
+# OMAGIC (relocatable) objects must not be treated as pre-linked executables.
+# Before the fix, EXEC_P was set because a_entry=0 is within text [0, size),
+# causing ld to skip relocations and place user symbols at wrong addresses.
+send_log "Testing: reloc_test.o does not have EXEC_P (it is a relocatable object)\n"
+if { ![regexp {EXEC_P} $got_reloc] } {
+    pass "reloc_test.o does not have EXEC_P (OMAGIC relocatable correctly identified)"
+} else {
+    fail "reloc_test.o incorrectly has EXEC_P set -- linker will skip relocations"
+    send_log "Output was: $got_reloc\n"
+}
+
+# Test 23: nm on reloc_test.o must find the 'main' symbol in .text.
+send_log "Testing: nm on reloc_test.o finds 'main' in .text\n"
+set got_nm_reloc [binutils_run $NM "$reloc_fixture"]
+
+if { [regexp {[Tt]\s+main} $got_nm_reloc] } {
+    pass "nm finds 'main' as a text symbol in reloc_test.o"
+} else {
+    fail "nm did not find 'main' as a text symbol in reloc_test.o"
+    send_log "nm output was: $got_nm_reloc\n"
+}
+
