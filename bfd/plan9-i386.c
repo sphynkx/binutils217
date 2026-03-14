@@ -78,8 +78,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 #define MY_BFD_TARGET
 #define MY_object_p MY(object_p)
 #define MY_write_object_contents MY(write_object_contents)
-//#define MY_get_symtab_upper_bound plan9_i386_get_symtab_upper_bound
-//#define MY_get_symtab plan9_i386_get_symtab
+/* Use custom symbol-table functions to safely handle Plan 9 exec format,
+   which has no a.out-compatible string table and can trigger a
+   stringsize-underflow heap overflow in the generic slurp path.  */
+#define MY_get_symtab_upper_bound MY(get_symtab_upper_bound)
+#define MY_canonicalize_symtab    MY(get_symtab)
 
 static void plan9_swap_exec_header_out (bfd *abfd,
                                         const struct internal_exec *execp,
@@ -406,6 +409,8 @@ some_plan9_object_p (bfd *abfd,
 */
 	struct aout_data_struct *rawptr, *oldrawptr;
 	const bfd_target *result;
+	/* native_sym_bytes: original a_syms for native Plan 9 exec (0 otherwise). */
+	bfd_size_type native_sym_bytes = 0;
 
 	rawptr = (struct aout_data_struct  *) bfd_zalloc (abfd, sizeof (struct aout_data_struct ));
 	if (rawptr == NULL)
@@ -425,8 +430,28 @@ some_plan9_object_p (bfd *abfd,
 	/* Set the file flags */
 	abfd->flags = BFD_NO_FLAGS;
 	/* Setting of EXEC_P has been deferred to the bottom of this function */
+
+	/* For native Plan 9 exec (QMAGIC = 0x1eb), a_syms is the *byte-count* of
+	   the Plan 9-format native symbol table, NOT an a.out nlist byte count.
+	   Zero it BEFORE the flags check so the generic a.out code never sees it:
+	   aout_get_external_symbols would compute count=a_syms/12=83, allocate
+	   83*12=996 bytes, then bfd_bread(996-byte buffer, a_syms=1006, ...) which
+	   overflows the allocation and corrupts the malloc heap.
+	   The custom reader plan9_i386_slurp_native_symtab recovers the size as
+	   (obj_str_filepos - obj_sym_filepos) set later in this function.  */
+	if (N_MAGIC (*execp) == QMAGIC)
+	  {
+	    native_sym_bytes = execp->a_syms;
+	    execp->a_syms    = 0;   /* hide from generic a.out code */
+	  }
+
 	if (execp->a_syms)
 		abfd->flags |= HAS_LINENO | HAS_DEBUG | HAS_SYMS | HAS_LOCALS;
+
+	/* For native Plan 9 exec, set only HAS_SYMS|HAS_LOCALS (not
+	   HAS_LINENO/HAS_DEBUG) when a Plan 9 symbol table is present.  */
+	if (native_sym_bytes > 0)
+		abfd->flags |= HAS_SYMS | HAS_LOCALS;
 	if (N_DYNAMIC(*execp))
 		abfd->flags |= DYNAMIC;
 
@@ -444,7 +469,11 @@ some_plan9_object_p (bfd *abfd,
 	obj_reloc_entry_size (abfd) = 1;
 	obj_symbol_entry_size (abfd) = 1;
 */
-	bfd_get_symcount (abfd) = execp->a_syms / sizeof (struct external_nlist);
+	/* For native Plan 9 exec the a_syms field is the byte-size of the
+	   Plan 9 symbol table, which is NOT in a.out nlist format.  Setting
+	   symcount to zero here lets the custom slurp determine the real count
+	   (or safely return -1 if the string table is absent).  */
+	bfd_get_symcount (abfd) = 0;
 	obj_reloc_entry_size (abfd) = RELOC_STD_SIZE;
 	obj_symbol_entry_size (abfd) = EXTERNAL_NLIST_SIZE;
 
@@ -459,8 +488,9 @@ some_plan9_object_p (bfd *abfd,
 	if (! NAME(aout,make_sections) (abfd))
 		return NULL;
 
+	obj_textsec (abfd)->rawsize = execp->a_text;
 	obj_datasec (abfd)->rawsize = execp->a_data;
-	obj_bsssec (abfd)->rawsize = execp->a_bss;
+	obj_bsssec  (abfd)->rawsize = execp->a_bss;
 
 	/* Keep canonical section sizes in sync with rawsize.
      objdump/size use section->size, not rawsize.  */
@@ -484,6 +514,46 @@ some_plan9_object_p (bfd *abfd,
 
 	obj_sym_filepos(abfd) = N_SYMOFF(*execp);
 	obj_str_filepos(abfd) = N_STROFF(*execp);
+
+	/* For native Plan 9 exec (QMAGIC = 0x1eb, big-endian header):
+	   The QMAGIC macros assume a_text INCLUDES EXEC_BYTES_SIZE, but Plan 9's
+	   a_text is the pure code size; the header is a separate 32-byte block.
+	   Fix up all section sizes, VMAs, and file positions after the callback.  */
+	if (N_MAGIC (*execp) == QMAGIC)
+	  {
+	    bfd_vma data_vma;
+
+	    /* Text: correct size (callback set it to a_text - EXEC_BYTES_SIZE).  */
+	    obj_textsec (abfd)->size    = execp->a_text;
+	    obj_textsec (abfd)->rawsize = execp->a_text;
+	    /* filepos = EXEC_BYTES_SIZE, already set correctly by the callback.  */
+
+	    /* Data: filepos = header + text.  */
+	    obj_datasec (abfd)->filepos = (file_ptr) EXEC_BYTES_SIZE
+	                                  + (file_ptr) execp->a_text;
+
+	    /* Data VMA = first page boundary after end of text VMA.  */
+	    data_vma = obj_textsec (abfd)->vma + execp->a_text;
+	    data_vma = (data_vma + TARGET_PAGE_SIZE - 1)
+	              & ~((bfd_vma) (TARGET_PAGE_SIZE - 1));
+	    obj_datasec (abfd)->vma = data_vma;
+	    obj_datasec (abfd)->lma = data_vma;
+	    obj_bsssec  (abfd)->vma = data_vma + execp->a_data;
+	    obj_bsssec  (abfd)->lma = data_vma + execp->a_data;
+
+	    /* Symbol table: header + text + data.
+	       Use native_sym_bytes (the original a_syms before we zeroed it
+	       to prevent generic a.out misinterpretation of the Plan 9 table).
+	       obj_str_filepos - obj_sym_filepos is what plan9_i386_slurp_native_symtab
+	       uses to determine the symbol table size.  */
+	    {
+	      file_ptr sym_off = (file_ptr) EXEC_BYTES_SIZE
+	                         + (file_ptr) execp->a_text
+	                         + (file_ptr) execp->a_data;
+	      obj_sym_filepos (abfd) = sym_off;
+	      obj_str_filepos (abfd) = sym_off + (file_ptr) native_sym_bytes;
+	    }
+	  }
 
 	/* Now that the segment addresses have been worked out, take a better
 		guess at whether the file is executable.  If the entry point
@@ -628,6 +698,186 @@ putsym(bfd *abfd, int type, char *prefix, char *name, bfd_vma value)
 }
 
 
+/* Read the symbol table of a native Plan 9 exec (magic 0x1eb).
+   Each entry: 4-byte big-endian value, 1-byte type, null-terminated name.
+   Types with bit 7 set (>= 0x80) are Plan 9 symbols; others are stabs.
+   Defensive: checks that the table fits within the file before reading.  */
+static boolean
+plan9_i386_slurp_native_symtab (bfd *abfd)
+{
+  struct internal_exec *execp;
+  file_ptr          sympos;
+  bfd_size_type     sym_bytes;
+  bfd_byte         *sym_data;
+  const bfd_byte   *p, *end;
+  bfd_size_type     sym_count;
+  aout_symbol_type *cached;
+  bfd_size_type     i;
+
+  execp    = exec_hdr (abfd);
+  sympos   = obj_sym_filepos (abfd);
+
+  /* Recover the native symbol table byte count from the file-position
+     difference set up by some_plan9_object_p.  We cannot use execp->a_syms
+     because it was zeroed to prevent generic a.out code (aout_get_external_symbols)
+     from trying to parse the Plan 9 table as nlist entries and overflowing the
+     heap.  obj_str_filepos - obj_sym_filepos holds the original value.  */
+  sym_bytes = (obj_str_filepos (abfd) > sympos)
+              ? (bfd_size_type) (obj_str_filepos (abfd) - sympos)
+              : 0;
+
+  if (sym_bytes == 0)
+    return TRUE;
+
+  /* Defensive bounds check: sympos + sym_bytes must not exceed file size.  */
+  {
+    bfd_size_type file_size = (bfd_size_type) bfd_get_size (abfd);
+    if (file_size != 0
+        && ((bfd_size_type) sympos >= file_size
+            || sym_bytes > file_size - (bfd_size_type) sympos))
+      {
+        bfd_set_error (bfd_error_file_truncated);
+        return FALSE;
+      }
+  }
+
+  /* Use bfd_alloc so the buffer is freed automatically when BFD closes.
+     Symbol name pointers stored in cached[] remain valid for BFD lifetime.  */
+  sym_data = (bfd_byte *) bfd_alloc (abfd, sym_bytes);
+  if (sym_data == NULL)
+    return FALSE;
+
+  if (bfd_seek (abfd, sympos, SEEK_SET) != 0
+      || bfd_bread ((void *) sym_data, sym_bytes, abfd) != sym_bytes)
+    {
+      bfd_release (abfd, sym_data);
+      bfd_set_error (bfd_error_file_truncated);
+      return FALSE;
+    }
+
+  /* First pass: count entries (value + type + null-terminated name).  */
+  sym_count = 0;
+  p   = sym_data;
+  end = sym_data + sym_bytes;
+  while (p + 5 <= end)
+    {
+      const bfd_byte *np = p + 5;
+      while (np < end && *np != 0)
+        np++;
+      if (np >= end)
+        break;          /* No null terminator within bounds: stop.  */
+      sym_count++;
+      p = np + 1;
+    }
+
+  if (sym_count == 0)
+    return TRUE;
+
+  /* Use bfd_malloc (not bfd_zalloc/bfd_alloc) so that bfd_free_cached_info's
+     free(obj_aout_symbols(abfd)) is valid.  The sym_data buffer (bfd_alloc)
+     lives in the BFD object pool and stays valid until bfd_release frees it;
+     symbol name pointers into sym_data remain valid for the BFD's lifetime.  */
+  cached = (aout_symbol_type *) bfd_malloc (
+                (bfd_size_type) sym_count * sizeof (aout_symbol_type));
+  if (cached == NULL)
+    return FALSE;
+  memset (cached, 0, sym_count * sizeof (aout_symbol_type));
+
+  /* Second pass: fill canonical symbol entries.  */
+  p = sym_data;
+  i = 0;
+  while (i < sym_count && p + 5 <= end)
+    {
+      bfd_vma      value;
+      unsigned int type_byte;
+      const bfd_byte *np;
+      asection    *sec;
+
+      value     = bfd_getb32 (p);
+      type_byte = p[4];
+      np        = p + 5;
+      while (np < end && *np != 0)
+        np++;
+      if (np >= end)
+        break;
+
+      cached[i].symbol.the_bfd = abfd;
+      cached[i].symbol.name    = (const char *) (p + 5);
+      cached[i].symbol.flags   = 0;
+      sec = bfd_abs_section_ptr;
+
+      if (type_byte & 0x80)
+        {
+          /* Plan 9 symbol: lower 7 bits give the type character.
+             Plan 9 stores absolute VAs; BFD expects section-relative values
+             (nm displays value + section->vma).  Subtract the section VMA.  */
+          switch (type_byte & 0x7f)
+            {
+            case 'T':
+              sec = obj_textsec (abfd);
+              cached[i].symbol.flags = BSF_GLOBAL;
+              break;
+            case 't':
+              sec = obj_textsec (abfd);
+              cached[i].symbol.flags = BSF_LOCAL;
+              break;
+            case 'D':
+              sec = obj_datasec (abfd);
+              cached[i].symbol.flags = BSF_GLOBAL;
+              break;
+            case 'd':
+              sec = obj_datasec (abfd);
+              cached[i].symbol.flags = BSF_LOCAL;
+              break;
+            case 'B':
+              sec = obj_bsssec (abfd);
+              cached[i].symbol.flags = BSF_GLOBAL;
+              break;
+            case 'b':
+              sec = obj_bsssec (abfd);
+              cached[i].symbol.flags = BSF_LOCAL;
+              break;
+            default:    /* 'f' (filename), 'z' (source line), etc. */
+              cached[i].symbol.flags = BSF_DEBUGGING;
+              sec = bfd_abs_section_ptr;
+              break;
+            }
+        }
+      else
+        {
+          /* Stab / debug entry (type_byte < 0x80).  */
+          cached[i].symbol.flags = BSF_DEBUGGING;
+          sec = bfd_abs_section_ptr;
+        }
+
+      /* Plan 9 stores absolute VAs.  Convert to section-relative offset
+         (nm shows value + section->vma; BSF_DEBUGGING symbols keep their
+         raw value since it is not an address).  */
+      if (sec != bfd_abs_section_ptr
+          && !(cached[i].symbol.flags & BSF_DEBUGGING)
+          && value >= sec->vma)
+        cached[i].symbol.value = value - sec->vma;
+      else
+        cached[i].symbol.value = value;
+
+      cached[i].symbol.section = sec;
+      p = np + 1;
+      i++;
+    }
+
+  sym_count = i;
+  obj_aout_symbols (abfd)   = cached;
+  bfd_get_symcount (abfd)   = sym_count;
+
+  /* sym_data is allocated from the BFD object pool (bfd_alloc).  The symbol
+     name pointers in cached[] point into it and remain valid for the BFD's
+     lifetime.  Do NOT store sym_data in obj_aout_external_strings: that field
+     is expected to be a regular malloc() pointer and any generic cleanup code
+     that calls free(obj_aout_external_strings) would crash on a pool pointer.  */
+
+  return TRUE;
+}
+
 static boolean
 MY(slurp_symbol_table) (bfd *abfd)
 {
@@ -649,6 +899,11 @@ MY(slurp_symbol_table) (bfd *abfd)
     return true;
 
   execp = exec_hdr (abfd);
+
+  /* Native Plan 9 exec uses its own symbol table format (not a.out nlist).  */
+  if (N_MAGIC (*execp) == QMAGIC)
+    return plan9_i386_slurp_native_symtab (abfd);
+
   sym_bytes = execp->a_syms;
   if (sym_bytes == 0)
     return true;

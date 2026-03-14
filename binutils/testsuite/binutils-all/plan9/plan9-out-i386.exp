@@ -123,3 +123,108 @@ if { [regexp {\.bss\s+([0-9a-fA-F]+)} $gotsec -> bsssz]
     send_log "objdump -h output was:\n$gotsec\n"
 }
 
+# -----------------------------------------------------------------------
+# Tests for ADJSP $0x50 → sub $0x50,%esp (regression for ADJSP sign bug).
+#
+# callmain_stack.8 contains:
+#   ATEXT _callmain
+#   ADJSP $0x50   ← positive: allocate 80 bytes from stack
+#   RET
+#
+# Before the fix, positive ADJSP was converted to ADDL (wrong sign),
+# producing add $0x50,%esp (83 c4 50) or similar.  After the fix it must
+# produce sub $0x50,%esp encoded as the 3-byte sequence 83 ec 50.
+# -----------------------------------------------------------------------
+set stack_fixture "$testdir/callmain_stack.8"
+
+# Test 8: objdump -f recognises callmain_stack.8 as plan9-out-i386.
+send_log "Testing: objdump -f on callmain_stack.8\n"
+set got8 [binutils_run $OBJDUMP "-f $stack_fixture"]
+
+if { [regexp "plan9-out-i386" $got8] } {
+    pass "objdump -f recognizes callmain_stack.8 as plan9-out-i386"
+} else {
+    fail "objdump -f does not recognize callmain_stack.8 as plan9-out-i386"
+    send_log "Output was: $got8\n"
+}
+
+# Test 9: disassembly of callmain_stack.8 contains sub $0x50,%esp (83 ec 50).
+# We use objdump -d and check for the hex bytes in the output.
+send_log "Testing: callmain_stack.8 encodes ADJSP \$0x50 as sub \$0x50,%esp\n"
+set got9 [binutils_run $OBJDUMP "-d $stack_fixture"]
+
+if { [regexp {83\s+ec\s+50} $got9] } {
+    pass "ADJSP \$0x50 correctly encoded as sub \$0x50,%esp (83 ec 50)"
+} else {
+    fail "ADJSP \$0x50 not encoded as sub \$0x50,%esp -- got wrong machine code"
+    send_log "objdump -d output was:\n$got9\n"
+}
+
+# Test 10: disassembly must NOT contain the incorrect add $0x50,%esp (83 c4 50).
+send_log "Testing: callmain_stack.8 does not contain add \$0x50,%esp (wrong sign)\n"
+if { ![regexp {83\s+c4\s+50} $got9] } {
+    pass "callmain_stack.8 does not contain incorrect add \$0x50,%esp"
+} else {
+    fail "callmain_stack.8 contains add \$0x50,%esp -- ADJSP sign is still wrong"
+    send_log "objdump -d output was:\n$got9\n"
+}
+
+# Test 11: disassembly must NOT contain the incorrect LEA substitution
+# (8d 84 24 c0 ff ff ff = lea 0xffffffc0(%esp),%eax).
+send_log "Testing: callmain_stack.8 does not contain incorrect lea substitution\n"
+if { ![regexp {8d\s+84\s+24} $got9] } {
+    pass "callmain_stack.8 does not contain incorrect lea substitution"
+} else {
+    fail "callmain_stack.8 contains lea substitution -- stack adjustment is wrong"
+    send_log "objdump -d output was:\n$got9\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests for native Plan 9 i386 executable (pw).
+#
+# pw is a small native 9front/Plan 9 i386 executable produced by 8l.
+# Its header has magic 0x1eb (big-endian), a_text=0xda, a_data=0x24,
+# a_syms=0x3ee (1006 bytes of Plan 9-format symbols).  The Plan 9
+# symbol format uses (4-byte big-endian value, 1-byte type, name\0)
+# entries, not a.out nlist.  Bugs fixed:
+#   - section layout: data filepos was off by EXEC_BYTES_SIZE (32 bytes)
+#   - slurp: Plan 9 native symbols were wrongly decoded as a.out nlist,
+#     causing malloc() corruption for a_syms not divisible by 12
+# -----------------------------------------------------------------------
+set pw_fixture "$testdir/pw"
+
+# Test 12: objdump -f recognises pw as plan9-i386.
+send_log "Testing: objdump -f on pw\n"
+set got12 [binutils_run $OBJDUMP "-f $pw_fixture"]
+
+if { [regexp "plan9-i386" $got12] } {
+    pass "objdump -f recognizes pw as plan9-i386"
+} else {
+    fail "objdump -f does not recognize pw as plan9-i386"
+    send_log "Output was: $got12\n"
+}
+
+# Test 13: objdump -d pw must not say "wrong format" (detection succeeds
+# and the text section is read and disassembled without crash).
+send_log "Testing: objdump -d on pw does not print 'wrong format'\n"
+set got13 [binutils_run $OBJDUMP "-d $pw_fixture"]
+
+if { ![regexp -nocase "wrong format" $got13] && [string length $got13] > 0 } {
+    pass "objdump -d on pw succeeds (no 'wrong format')"
+} else {
+    fail "objdump -d on pw printed 'wrong format' or produced no output"
+    send_log "Output was: $got13\n"
+}
+
+# Test 14: nm pw must not crash and must list at least one known symbol.
+# The Plan 9 symbol table in pw contains 'etext' (a text-segment symbol).
+send_log "Testing: nm on pw finds 'etext' symbol\n"
+set got14 [binutils_run $NM "$pw_fixture"]
+
+if { [regexp "etext" $got14] } {
+    pass "nm on pw finds 'etext' (Plan 9 native symbol table parsed correctly)"
+} else {
+    fail "nm on pw did not find 'etext' -- Plan 9 native symtab may be broken"
+    send_log "Output was: $got14\n"
+}
+
