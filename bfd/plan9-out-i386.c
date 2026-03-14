@@ -2167,19 +2167,13 @@ p9_read_zaddr (const unsigned char *p, bfd_size_type rem,
   if (t & P9OBJ_T_OFFSET)
     {
       if (c + 4 > rem) return -1;
-      /* Read 32-bit LE value and sign-extend to the native long width.
-         Without explicit sign extension, a negative 32-bit value such as
-         -0x40 (= 0xffffffc0) would be read as a large positive long on
-         64-bit hosts, defeating 8-bit displacement selection and breaking
-         the D_AUTO offset arithmetic.  */
-      { unsigned long raw = ((unsigned long)p[c]
-                           | ((unsigned long)p[c+1] << 8)
-                           | ((unsigned long)p[c+2] << 16)
-                           | ((unsigned long)p[c+3] << 24));
-        if (raw & 0x80000000UL)
-          a->offset = (long)(raw | ~0xffffffffUL);  /* sign-extend to long */
-        else
-          a->offset = (long)raw; }
+      /* Use BFD's signed 32-bit LE reader so that negative offsets
+         (e.g. D_AUTO -0x40 = 0xffffffc0) are correctly sign-extended
+         to the native long width on both 32-bit and 64-bit hosts.
+         Without sign extension, -0x40 would become a large positive
+         long on 64-bit, defeating the 8-bit displacement optimisation
+         and breaking the D_AUTO offset arithmetic.  */
+      a->offset = (long) bfd_getl_signed_32 (p + c);
       c += 4;
     }
   if (t & P9OBJ_T_SYM)
@@ -2710,6 +2704,10 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
             cur_auto_size = progs_all[i].to.offset;
             continue;
           }
+        /* Skip if no frame: auto_size == 0 means the function has no
+           locals and P9AS_TEXT does not inject ADJSP, so no adjustment
+           is needed.  Negative values cannot occur (ATEXT auto-size is
+           always non-negative in Plan 9 .8 files), but guard anyway.  */
         if (cur_auto_size <= 0)
           continue;
 
