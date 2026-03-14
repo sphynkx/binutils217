@@ -2167,10 +2167,19 @@ p9_read_zaddr (const unsigned char *p, bfd_size_type rem,
   if (t & P9OBJ_T_OFFSET)
     {
       if (c + 4 > rem) return -1;
-      a->offset = (long)((unsigned long)p[c]
-                       | ((unsigned long)p[c+1] << 8)
-                       | ((unsigned long)p[c+2] << 16)
-                       | ((unsigned long)p[c+3] << 24));
+      /* Read 32-bit LE value and sign-extend to the native long width.
+         Without explicit sign extension, a negative 32-bit value such as
+         -0x40 (= 0xffffffc0) would be read as a large positive long on
+         64-bit hosts, defeating 8-bit displacement selection and breaking
+         the D_AUTO offset arithmetic.  */
+      { unsigned long raw = ((unsigned long)p[c]
+                           | ((unsigned long)p[c+1] << 8)
+                           | ((unsigned long)p[c+2] << 16)
+                           | ((unsigned long)p[c+3] << 24));
+        if (raw & 0x80000000UL)
+          a->offset = (long)(raw | ~0xffffffffUL);  /* sign-extend to long */
+        else
+          a->offset = (long)raw; }
       c += 4;
     }
   if (t & P9OBJ_T_SYM)
@@ -2682,7 +2691,47 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
         }
     }
 
-  /* ---- Span algorithm (iterative) ---- */
+  /* ---- Adjust D_AUTO / D_PARAM offsets by the function auto (frame) size ----
+     In Plan 9 .8 object files, D_AUTO (63) and D_PARAM (64) address offsets
+     are FP-relative: measured from the virtual frame pointer, which equals SP
+     at function entry (before the stack frame is pushed).  After the BFD
+     backend synthesises ADJSP $N (sub $N,%esp), all D_AUTO and D_PARAM
+     references must be shifted by +N to become current-SP-relative, matching
+     the semantics 9front 8l applies in its span() function.
+
+     Example: D_AUTO offset -0x40 with auto_size 0x50 → SP+(-0x40+0x50)=SP+0x10
+     i.e. lea 0x10(%esp),%eax (8d 44 24 10) instead of lea -0x40(%esp),%eax.  */
+  { long cur_auto_size = 0;
+    for (i = 0; i < nprogs_all; i++)
+      {
+        /* Track function auto/frame size from ATEXT instruction */
+        if (progs_all[i].as == P9AS_TEXT)
+          {
+            cur_auto_size = progs_all[i].to.offset;
+            continue;
+          }
+        if (cur_auto_size <= 0)
+          continue;
+
+        /* Adjust D_AUTO and D_PARAM offsets (with or without D_INDIR) */
+#define P9_ADJOFF(a)                                                          \
+        do {                                                                  \
+          int _t = (a).type;                                                  \
+          if (_t == P9D_AUTO || _t == P9D_PARAM                              \
+              || _t == (P9D_AUTO + P9D_INDIR)                                \
+              || _t == (P9D_PARAM + P9D_INDIR))                              \
+            (a).offset += cur_auto_size;                                     \
+          /* D_ADDR with index D_AUTO/D_PARAM (LEA of stack variable) */     \
+          if (_t == P9D_ADDR                                                  \
+              && ((a).index == P9D_AUTO || (a).index == P9D_PARAM))          \
+            (a).offset += cur_auto_size;                                     \
+        } while (0)
+
+        P9_ADJOFF (progs_all[i].from);
+        P9_ADJOFF (progs_all[i].to);
+#undef P9_ADJOFF
+      }
+  }
   /* We run span up to 20 iterations until stable. */
 
   /* First pass: size each instruction */

@@ -44,11 +44,11 @@ if { [string length $got] > 0 && ![regexp "no symbols" $got]
     send_log "Output was: $got\n"
 }
 
-# Test 3: nm finds specific symbols (main, _callmain, exits).
-if { [regexp "main" $got] } {
-    pass "nm finds 'main' symbol in callmain.8"
+# Test 3: nm finds specific symbols (_callmain is the real 9front libc entry).
+if { [regexp "_callmain" $got] } {
+    pass "nm finds '_callmain' symbol in callmain.8"
 } else {
-    fail "nm does not find 'main' symbol in callmain.8"
+    fail "nm does not find '_callmain' symbol in callmain.8"
     send_log "Output was: $got\n"
 }
 
@@ -229,48 +229,60 @@ if { [regexp "etext" $got14] } {
 }
 
 # -----------------------------------------------------------------------
-# Tests for real 9front libc callmain_9front.8 (606 bytes from 9front libc.a).
+# Tests for the real 9front libc callmain.8 (606 bytes from 9front libc.a).
 #
-# The real 9front callmain.8 uses the Plan 9 ATEXT convention: the frame
-# size (auto allocation) is stored in the ATEXT to.offset field (0x50 = 80)
+# The real 9front callmain.8 uses the Plan 9 ATEXT convention: the stack
+# frame (auto) size is stored in the ATEXT to.offset field (0x50 = 80)
 # rather than as a separate ADJSP instruction.  The BFD backend must
-# synthesise the ADJSP from the ATEXT auto-size so that _callmain's
-# prologue starts with sub $0x50,%esp (83 ec 50), not with a spurious
-# lea instruction.
+# synthesise ADJSP from the ATEXT auto-size and then adjust all D_AUTO
+# and D_PARAM addresses by +auto_size, matching 9front 8l span() semantics.
+#
+# Before the fix: first instruction was 8d 84 24 c0 ff ff ff
+#   (lea -0x40(%esp),%eax — no stack allocation, wrong offset).
+# After the fix:
+#   0: 83 ec 50  sub $0x50,%esp          (ADJSP from ATEXT auto-size)
+#   3: 8d 44 24 10  lea 0x10(%esp),%eax  (D_AUTO -0x40 + 0x50 = +0x10)
 # -----------------------------------------------------------------------
-set front_fixture "$testdir/callmain_9front.8"
 
-# Test 15: objdump -f recognises callmain_9front.8 as plan9-out-i386.
-send_log "Testing: objdump -f on callmain_9front.8\n"
-set got15 [binutils_run $OBJDUMP "-f $front_fixture"]
+# Test 15: disassembly of callmain.8 contains sub $0x50,%esp (83 ec 50).
+# The ATEXT auto-size must be converted to ADJSP -> SUBL to allocate the frame.
+send_log "Testing: callmain.8 _callmain prologue contains sub \$0x50,%esp\n"
+set got15 [binutils_run $OBJDUMP "-d $fixture"]
 
-if { [regexp "plan9-out-i386" $got15] } {
-    pass "objdump -f recognizes callmain_9front.8 as plan9-out-i386"
+if { [regexp {83\s+ec\s+50} $got15] } {
+    pass "callmain.8 contains sub \$0x50,%esp (ATEXT auto-size synthesised correctly)"
 } else {
-    fail "objdump -f does not recognize callmain_9front.8 as plan9-out-i386"
-    send_log "Output was: $got15\n"
+    fail "callmain.8 missing sub \$0x50,%esp -- ATEXT auto-size not synthesised"
+    send_log "objdump -d output was:\n$got15\n"
 }
 
-# Test 16: disassembly of callmain_9front.8 contains sub $0x50,%esp (83 ec 50).
-# The ATEXT auto-size must be converted to ADJSP -> sub to allocate the frame.
-send_log "Testing: callmain_9front.8 _callmain prologue contains sub \$0x50,%esp\n"
-set got16 [binutils_run $OBJDUMP "-d $front_fixture"]
-
-if { [regexp {83\s+ec\s+50} $got16] } {
-    pass "callmain_9front.8 contains sub \$0x50,%esp (ATEXT auto-size synthesised correctly)"
+# Test 16: sub must be the FIRST instruction of _callmain (at offset 0).
+send_log "Testing: callmain.8 _callmain first instruction is sub (not lea)\n"
+if { [regexp {0:\s+83\s+ec\s+50} $got15] } {
+    pass "callmain.8 _callmain first instruction is sub \$0x50,%esp (not lea)"
 } else {
-    fail "callmain_9front.8 missing sub \$0x50,%esp -- ATEXT auto-size not synthesised"
-    send_log "objdump -d output was:\n$got16\n"
+    fail "callmain.8 _callmain first instruction is not sub \$0x50,%esp"
+    send_log "objdump -d output was:\n$got15\n"
 }
 
-# Test 17: the sub must be the FIRST instruction of _callmain (at offset 0).
-# Before the fix, the first instruction was 8d 84 24 c0 ff ff ff (lea -0x40(%esp),%eax)
-# because no stack allocation was inserted before the function body.
-send_log "Testing: callmain_9front.8 _callmain first instruction is sub (not lea)\n"
-if { [regexp {0:\s+83\s+ec\s+50} $got16] } {
-    pass "callmain_9front.8 _callmain first instruction is sub \$0x50,%esp (not lea)"
+# Test 17: D_AUTO offset adjustment: lea must use 0x10(%esp) not -0x40(%esp).
+# D_AUTO offset -0x40 adjusted by auto_size 0x50 must produce +0x10.
+# Bytes: 8d 44 24 10 = lea 0x10(%esp),%eax  (correct, with 8-bit displacement).
+send_log "Testing: callmain.8 D_AUTO offset adjusted (lea 0x10(%esp), not -0x40(%esp))\n"
+if { [regexp {8d\s+44\s+24\s+10} $got15] } {
+    pass "callmain.8 D_AUTO -0x40 + auto_size 0x50 = 0x10 (correct lea 0x10(%esp))"
 } else {
-    fail "callmain_9front.8 _callmain first instruction is not sub \$0x50,%esp"
-    send_log "objdump -d output was:\n$got16\n"
+    fail "callmain.8 D_AUTO offset not adjusted -- lea 0x10(%esp) not found"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 18: disassembly must NOT contain the wrong lea with -0x40 offset.
+# 8d 84 24 c0 ff ff ff = lea -0x40(%esp),%eax (unadjusted, wrong).
+send_log "Testing: callmain.8 does not contain unadjusted lea -0x40(%esp)\n"
+if { ![regexp {8d\s+84\s+24\s+c0\s+ff\s+ff\s+ff} $got15] } {
+    pass "callmain.8 does not contain lea -0x40(%esp) (D_AUTO correctly adjusted)"
+} else {
+    fail "callmain.8 contains lea -0x40(%esp) -- D_AUTO offset was NOT adjusted"
+    send_log "objdump -d output was:\n$got15\n"
 }
 
