@@ -260,20 +260,26 @@ MY(write_object_contents) (bfd *abfd)
      a.out copying code may "pack" VMAs starting at 0 (text=0, data=text_size).
      Restore Plan 9 VMAs before writing the header/contents.  */
   if (bfd_get_arch (abfd) == bfd_arch_i386
-      && bfd_get_start_address (abfd) == 0x1020
       && obj_textsec (abfd) != NULL
       && obj_datasec (abfd) != NULL
       && obj_bsssec (abfd) != NULL
       && obj_textsec (abfd)->vma == 0)
     {
       bfd_vma text_vma, data_vma, bss_vma;
+      bfd_size_type tsz;
 
       text_vma = 0x1020;
-      data_vma = 0x2000;
 
-      /* Place bss after data; keep 0x1000 alignment like the rest of the format. */
+      /* Plan 9 i386: data VMA = first page boundary after INITTEXT + a_text.
+         Compute from actual text size so the kernel places data correctly.  */
+      tsz = obj_textsec (abfd)->size;
+      data_vma = ((bfd_vma) 0x1020 + tsz + (bfd_vma) (TARGET_PAGE_SIZE - 1))
+                 & ~((bfd_vma) (TARGET_PAGE_SIZE - 1));
+
+      /* Place bss after data; keep page alignment.  */
       bss_vma = data_vma + obj_datasec (abfd)->size;
-      bss_vma = (bss_vma + 0xfff) & ~((bfd_vma) 0xfff);
+      bss_vma = (bss_vma + (bfd_vma) (TARGET_PAGE_SIZE - 1))
+                & ~((bfd_vma) (TARGET_PAGE_SIZE - 1));
 
       obj_textsec (abfd)->vma = text_vma;
       obj_datasec (abfd)->vma = data_vma;
@@ -311,28 +317,22 @@ MY(write_object_contents) (bfd *abfd)
 		}
 
 		/* Plan 9 i386 executables: header magic 0x1eb, big-endian fields.
-		   IMPORTANT: a_text must describe the *gap* from text base (0x1020)
-		   to data base (0x2000), not a page-rounded text size, otherwise the
-		   loader will place data/bss at the wrong address.  */
+		   a_text = actual text (code) byte count.  The Plan 9 kernel maps
+		   a_text bytes from file offset EXEC_BYTES_SIZE to VA INITTEXT=0x1020,
+		   then places data at ROUND(INITTEXT+a_text, PAGE).  Writing the gap
+		   (data_vma - text_vma) here causes the kernel to map too large a text
+		   region and read the data segment from the wrong file offset.  */
 
 		if (bfd_get_arch (abfd) == bfd_arch_i386)
 		  {
 			/* Plan 9 exec magic for i386.  */
 			execp->a_info = 0x1eb;
 
-			/* Make header sizes consistent with fixed VMAs.  */
-			if (obj_textsec (abfd) != NULL && obj_datasec (abfd) != NULL)
-			  {
-				bfd_vma text_vma = obj_textsec (abfd)->vma;
-				bfd_vma data_vma = obj_datasec (abfd)->vma;
-
-				if (text_vma != 0 && data_vma > text_vma)
-				  execp->a_text = (bfd_vma) (data_vma - text_vma);
-				else
-				  execp->a_text = obj_textsec (abfd)->size;
-			  }
-			else if (obj_textsec (abfd) != NULL)
-			  execp->a_text = obj_textsec (abfd)->size;
+			/* a_text = actual code bytes.  adjust_o_magic already set
+			   execp->a_text and the data section filepos correctly; just
+			   use the text section size directly.  */
+			execp->a_text = (obj_textsec (abfd) != NULL)
+			                ? obj_textsec (abfd)->size : 0;
 
 			execp->a_data = (obj_datasec (abfd) != NULL) ? obj_datasec (abfd)->size : 0;
 			execp->a_bss  = (obj_bsssec (abfd)  != NULL) ? obj_bsssec  (abfd)->size : 0;
