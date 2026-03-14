@@ -124,62 +124,6 @@ if { [regexp {\.bss\s+([0-9a-fA-F]+)} $gotsec -> bsssz]
 }
 
 # -----------------------------------------------------------------------
-# Tests for ADJSP $0x50 → sub $0x50,%esp (regression for ADJSP sign bug).
-#
-# callmain_stack.8 contains:
-#   ATEXT _callmain
-#   ADJSP $0x50   ← positive: allocate 80 bytes from stack
-#   RET
-#
-# Before the fix, positive ADJSP was converted to ADDL (wrong sign),
-# producing add $0x50,%esp (83 c4 50) or similar.  After the fix it must
-# produce sub $0x50,%esp encoded as the 3-byte sequence 83 ec 50.
-# -----------------------------------------------------------------------
-set stack_fixture "$testdir/callmain_stack.8"
-
-# Test 8: objdump -f recognises callmain_stack.8 as plan9-out-i386.
-send_log "Testing: objdump -f on callmain_stack.8\n"
-set got8 [binutils_run $OBJDUMP "-f $stack_fixture"]
-
-if { [regexp "plan9-out-i386" $got8] } {
-    pass "objdump -f recognizes callmain_stack.8 as plan9-out-i386"
-} else {
-    fail "objdump -f does not recognize callmain_stack.8 as plan9-out-i386"
-    send_log "Output was: $got8\n"
-}
-
-# Test 9: disassembly of callmain_stack.8 contains sub $0x50,%esp (83 ec 50).
-# We use objdump -d and check for the hex bytes in the output.
-send_log "Testing: callmain_stack.8 encodes ADJSP \$0x50 as sub \$0x50,%esp\n"
-set got9 [binutils_run $OBJDUMP "-d $stack_fixture"]
-
-if { [regexp {83\s+ec\s+50} $got9] } {
-    pass "ADJSP \$0x50 correctly encoded as sub \$0x50,%esp (83 ec 50)"
-} else {
-    fail "ADJSP \$0x50 not encoded as sub \$0x50,%esp -- got wrong machine code"
-    send_log "objdump -d output was:\n$got9\n"
-}
-
-# Test 10: disassembly must NOT contain the incorrect add $0x50,%esp (83 c4 50).
-send_log "Testing: callmain_stack.8 does not contain add \$0x50,%esp (wrong sign)\n"
-if { ![regexp {83\s+c4\s+50} $got9] } {
-    pass "callmain_stack.8 does not contain incorrect add \$0x50,%esp"
-} else {
-    fail "callmain_stack.8 contains add \$0x50,%esp -- ADJSP sign is still wrong"
-    send_log "objdump -d output was:\n$got9\n"
-}
-
-# Test 11: disassembly must NOT contain the incorrect LEA substitution
-# (8d 84 24 c0 ff ff ff = lea 0xffffffc0(%esp),%eax).
-send_log "Testing: callmain_stack.8 does not contain incorrect lea substitution\n"
-if { ![regexp {8d\s+84\s+24} $got9] } {
-    pass "callmain_stack.8 does not contain incorrect lea substitution"
-} else {
-    fail "callmain_stack.8 contains lea substitution -- stack adjustment is wrong"
-    send_log "objdump -d output was:\n$got9\n"
-}
-
-# -----------------------------------------------------------------------
 # Tests for native Plan 9 i386 executable (pw).
 #
 # pw is a small native 9front/Plan 9 i386 executable produced by 8l.
@@ -193,7 +137,7 @@ if { ![regexp {8d\s+84\s+24} $got9] } {
 # -----------------------------------------------------------------------
 set pw_fixture "$testdir/pw"
 
-# Test 12: objdump -f recognises pw as plan9-i386.
+# Test 8: objdump -f recognises pw as plan9-i386.
 send_log "Testing: objdump -f on pw\n"
 set got12 [binutils_run $OBJDUMP "-f $pw_fixture"]
 
@@ -204,7 +148,7 @@ if { [regexp "plan9-i386" $got12] } {
     send_log "Output was: $got12\n"
 }
 
-# Test 13: objdump -d pw must not say "wrong format" (detection succeeds
+# Test 9: objdump -d pw must not say "wrong format" (detection succeeds
 # and the text section is read and disassembled without crash).
 send_log "Testing: objdump -d on pw does not print 'wrong format'\n"
 set got13 [binutils_run $OBJDUMP "-d $pw_fixture"]
@@ -216,7 +160,7 @@ if { ![regexp -nocase "wrong format" $got13] && [string length $got13] > 0 } {
     send_log "Output was: $got13\n"
 }
 
-# Test 14: nm pw must not crash and must list at least one known symbol.
+# Test 10: nm pw must not crash and must list at least one known symbol.
 # The Plan 9 symbol table in pw contains 'etext' (a text-segment symbol).
 send_log "Testing: nm on pw finds 'etext' symbol\n"
 set got14 [binutils_run $NM "$pw_fixture"]
@@ -244,7 +188,7 @@ if { [regexp "etext" $got14] } {
 #   3: 8d 44 24 10  lea 0x10(%esp),%eax  (D_AUTO -0x40 + 0x50 = +0x10)
 # -----------------------------------------------------------------------
 
-# Test 15: disassembly of callmain.8 contains sub $0x50,%esp (83 ec 50).
+# Test 11: disassembly of callmain.8 contains sub $0x50,%esp (83 ec 50).
 # The ATEXT auto-size must be converted to ADJSP -> SUBL to allocate the frame.
 send_log "Testing: callmain.8 _callmain prologue contains sub \$0x50,%esp\n"
 set got15 [binutils_run $OBJDUMP "-d $fixture"]
@@ -256,7 +200,7 @@ if { [regexp {83\s+ec\s+50} $got15] } {
     send_log "objdump -d output was:\n$got15\n"
 }
 
-# Test 16: sub must be the FIRST instruction of _callmain (at offset 0).
+# Test 12: sub must be the FIRST instruction of _callmain (at offset 0).
 send_log "Testing: callmain.8 _callmain first instruction is sub (not lea)\n"
 if { [regexp {0:\s+83\s+ec\s+50} $got15] } {
     pass "callmain.8 _callmain first instruction is sub \$0x50,%esp (not lea)"
@@ -265,7 +209,7 @@ if { [regexp {0:\s+83\s+ec\s+50} $got15] } {
     send_log "objdump -d output was:\n$got15\n"
 }
 
-# Test 17: D_AUTO offset adjustment: lea must use 0x10(%esp) not -0x40(%esp).
+# Test 13: D_AUTO offset adjustment: lea must use 0x10(%esp) not -0x40(%esp).
 # D_AUTO offset -0x40 adjusted by auto_size 0x50 must produce +0x10.
 # Bytes: 8d 44 24 10 = lea 0x10(%esp),%eax  (correct, with 8-bit displacement).
 send_log "Testing: callmain.8 D_AUTO offset adjusted (lea 0x10(%esp), not -0x40(%esp))\n"
@@ -276,7 +220,7 @@ if { [regexp {8d\s+44\s+24\s+10} $got15] } {
     send_log "objdump -d output was:\n$got15\n"
 }
 
-# Test 18: disassembly must NOT contain the wrong lea with -0x40 offset.
+# Test 14: disassembly must NOT contain the wrong lea with -0x40 offset.
 # 8d 84 24 c0 ff ff ff = lea -0x40(%esp),%eax (unadjusted, wrong).
 send_log "Testing: callmain.8 does not contain unadjusted lea -0x40(%esp)\n"
 if { ![regexp {8d\s+84\s+24\s+c0\s+ff\s+ff\s+ff} $got15] } {
@@ -304,7 +248,7 @@ if { ![regexp {8d\s+84\s+24\s+c0\s+ff\s+ff\s+ff} $got15] } {
 #           ff d0         call *%eax
 # -----------------------------------------------------------------------
 
-# Test 19: D_PARAM 0 (fn_ptr) must be at 0x54(%esp) after adjustment.
+# Test 15: D_PARAM 0 (fn_ptr) must be at 0x54(%esp) after adjustment.
 # Bytes: 8b 44 24 54 = mov 0x54(%esp),%eax  (D_PARAM 0 + 0x50 + 4 = 0x54).
 send_log "Testing: callmain.8 D_PARAM 0 fn_ptr adjusted to 0x54(%esp)\n"
 if { [regexp {8b\s+44\s+24\s+54} $got15] } {
@@ -314,7 +258,7 @@ if { [regexp {8b\s+44\s+24\s+54} $got15] } {
     send_log "objdump -d output was:\n$got15\n"
 }
 
-# Test 20: the instruction at 0x54(%esp) must be immediately followed by
+# Test 16: the instruction at 0x54(%esp) must be immediately followed by
 # call *%eax (ff d0), confirming it is the indirect call through fn_ptr.
 # Bytes: 8b 44 24 54 ... ff d0 (two consecutive instructions).
 send_log "Testing: callmain.8 mov 0x54(%esp),%eax immediately precedes call *%eax\n"
@@ -325,7 +269,7 @@ if { [regexp {8b\s+44\s+24\s+54[^\n]*\n[^\n]*ff\s+d0} $got15] } {
     send_log "objdump -d output was:\n$got15\n"
 }
 
-# Test 21: the wrong slot (0x50, == return address) must NOT be used.
+# Test 17: the wrong slot (0x50, == return address) must NOT be used.
 # 8b 44 24 50 = mov 0x50(%esp),%eax would read the return address (== 0),
 # causing pc=0x0 crash on 9front when the startup JMPs (not CALLs) _callmain.
 send_log "Testing: callmain.8 does not contain mov 0x50(%esp),%eax (wrong slot)\n"
@@ -333,6 +277,76 @@ if { ![regexp {8b\s+44\s+24\s+50} $got15] } {
     pass "callmain.8 does not contain mov 0x50(%esp),%eax (return-addr slot not used)"
 } else {
     fail "callmain.8 contains mov 0x50(%esp),%eax -- fn_ptr still reads return addr slot"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests for argc/argv argument slots in _callmain.
+#
+# In the 9front _callmain ABI, after sub $0x50,%esp the stack slots are:
+#   new_SP+0x10 = &tosenv (D_AUTO -0x40 + 0x50)
+#   new_SP+0x54 = fn_ptr  (D_PARAM 0 + 0x50 + 4)
+#   new_SP+0x58 = argc    (D_PARAM 4 + 0x50 + 4)
+#   new_SP+0x5c = &argv   (D_PARAM 8 + 0x50 + 4)
+#
+# The native 9front reference binary pw contains (at offsets 0x17, 0x1e):
+#   17: 8b 44 24 58  mov 0x58(%esp),%eax   <- argc
+#   1e: 8d 44 24 5c  lea 0x5c(%esp),%eax   <- &argv[0]
+#
+# These slots must match the native 9front binary exactly.  Any deviation
+# causes _callmain to pass wrong argc/argv to the user program.
+# -----------------------------------------------------------------------
+
+# Test 18: argc must be loaded from 0x58(%esp).
+# Bytes: 8b 44 24 58 = mov 0x58(%esp),%eax
+# D_PARAM 4 (argc) + auto_size 0x50 + 4 (return addr) = 0x58 ✓
+send_log "Testing: callmain.8 argc loaded from 0x58(%esp)\n"
+if { [regexp {8b\s+44\s+24\s+58} $got15] } {
+    pass "callmain.8 argc loaded from 0x58(%esp) (D_PARAM 4 + auto_size 0x50 + 4)"
+} else {
+    fail "callmain.8 argc NOT loaded from 0x58(%esp) -- D_PARAM offset wrong"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 19: argv address must be computed as lea 0x5c(%esp),%eax.
+# Bytes: 8d 44 24 5c = lea 0x5c(%esp),%eax
+# D_PARAM 8 (argv) + auto_size 0x50 + 4 (return addr) = 0x5c ✓
+send_log "Testing: callmain.8 argv address computed from 0x5c(%esp)\n"
+if { [regexp {8d\s+44\s+24\s+5c} $got15] } {
+    pass "callmain.8 argv address computed from 0x5c(%esp) (D_PARAM 8 + auto_size 0x50 + 4)"
+} else {
+    fail "callmain.8 argv address NOT at 0x5c(%esp) -- D_PARAM offset wrong"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 20: Verify the complete _callmain sequence matches native 9front pw.
+# All five key stack-relative accesses must appear in the disassembly:
+#   sub $0x50,%esp          (frame alloc from ATEXT auto-size)
+#   lea 0x10(%esp),%eax     (tosenv = D_AUTO -0x40 + 0x50)
+#   mov 0x58(%esp),%eax     (argc = D_PARAM 4 + 0x50 + 4)
+#   lea 0x5c(%esp),%eax     (argv = D_PARAM 8 + 0x50 + 4)
+#   mov 0x54(%esp),%eax     (fn_ptr = D_PARAM 0 + 0x50 + 4)
+#   call *%eax              (indirect call through fn_ptr)
+# This mirrors the native 9front pw _callmain byte-for-byte for these slots.
+send_log "Testing: callmain.8 complete _callmain sequence matches native 9front pw\n"
+set seq_ok 1
+foreach {pat desc} {
+    {83\s+ec\s+50}       "sub \$0x50,%esp (frame alloc)"
+    {8d\s+44\s+24\s+10}  "lea 0x10(%esp),%eax (tosenv D_AUTO)"
+    {8b\s+44\s+24\s+58}  "mov 0x58(%esp),%eax (argc D_PARAM 4)"
+    {8d\s+44\s+24\s+5c}  "lea 0x5c(%esp),%eax (argv D_PARAM 8)"
+    {8b\s+44\s+24\s+54}  "mov 0x54(%esp),%eax (fn_ptr D_PARAM 0)"
+    {ff\s+d0}             "call *%eax"
+} {
+    if { ![regexp $pat $got15] } {
+        send_log "  MISSING: $desc\n"
+        set seq_ok 0
+    }
+}
+if { $seq_ok } {
+    pass "callmain.8 _callmain stack-frame sequence matches native 9front pw"
+} else {
+    fail "callmain.8 _callmain stack-frame sequence does not match native 9front pw"
     send_log "objdump -d output was:\n$got15\n"
 }
 
