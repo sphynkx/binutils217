@@ -612,3 +612,105 @@ if { ![regexp {ff\s*e8} $got_callmain_d] } {
     send_log "objdump -d output was:\n$got_callmain_d\n"
 }
 
+# -----------------------------------------------------------------------
+# Tests 36-41: Conditional branch (JEQ/JCC) encoding in exits.8
+#
+# exits.8 encodes the exits() libc function:
+#   TEXT exits+0(SB),$0
+#   MOVL _onexit+0(SB),CX    ; load function pointer
+#   CMPL CX,$0               ; is _onexit set?
+#   JEQ  skip                ; D_BRANCH → if NULL, skip the call
+#   CALL* CX                 ; call _onexit()
+# skip:
+#   CALL _exits(SB)          ; call _exits(msg)
+#   RET
+#
+# Root cause of the JEQ bug: plan9-out-i386 resolved branch targets by
+# comparing progs_all[j].pc (byte offset from span pass) against the
+# D_BRANCH target offset stored in the .8 file, which is the Plan 9
+# global instruction counter ("Plan 9 pc").  These are different things:
+#   - Plan 9 pc: incremented once per instruction record (counts AHISTORY,
+#     ATEXT, etc.), stored in D_BRANCH.offset
+#   - byte offset: assigned during span(), counting actual encoded bytes
+# The comparison always failed → pcond_idx stayed -1 → the Zbr encoding
+# case emitted 0 bytes → JEQ was silently dropped.
+#
+# Fix: store the Plan 9 pc in p9_Prog.back when reading the .8 file;
+# resolve D_BRANCH targets by matching .back == target_pc instead of
+# .pc == target_pc.  After resolution pcond_idx is valid and Zbr emits
+# the correct short/long Jcc instruction.
+#
+# Expected encoding of exits (auto_size=0, no ADJSP):
+#   0: 8b 0d XX XX XX XX   mov    0x0,%ecx      (load _onexit; reloc)
+#   6: 83 f9 00             cmp    $0x0,%ecx
+#   9: 74 02                je     0xd           (skip CALL* CX)
+#   b: ff d1                call   *%ecx         (CALL* CX)
+#   d: e8 XX XX XX XX       call   0x12          (CALL _exits; reloc)
+#  12: c3                   ret
+# -----------------------------------------------------------------------
+set exits_fixture "$testdir/exits.8"
+set got_exits_d [binutils_run $OBJDUMP "-d $exits_fixture"]
+
+send_log "Testing: exits.8 recognized as plan9-out-i386\n"
+# Test 36: exits.8 format is recognized.
+set got_exits_f [binutils_run $OBJDUMP "-f $exits_fixture"]
+if { [regexp "plan9-out-i386" $got_exits_f] } {
+    pass "exits.8 recognized as plan9-out-i386 format"
+} else {
+    fail "exits.8 not recognized as plan9-out-i386 format"
+    send_log "Output was: $got_exits_f\n"
+}
+
+send_log "Testing: exits.8 contains 'je' conditional branch\n"
+# Test 37: exits.8 disassembly must contain 'je' (conditional branch).
+# Without the fix, JEQ is silently dropped and only CMPL + CALL* CX appear
+# with no jump between them.  With the fix, 'je' appears between them.
+if { [regexp {j[et]} $got_exits_d] } {
+    pass "exits.8 disassembly contains 'je' conditional branch (JEQ encoded)"
+} else {
+    fail "exits.8 missing 'je' -- JEQ was silently dropped (branch resolution bug)"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+
+send_log "Testing: exits.8 contains 'ff d1' CALL* CX\n"
+# Test 38: exits.8 disassembly must contain 'ff d1' (indirect CALL via CX).
+# This is CALL* CX = ff d1; it must be present AND preceded by a 'je'.
+if { [regexp {ff\s*d1} $got_exits_d] } {
+    pass "exits.8 disassembly contains 'ff d1' (CALL* CX)"
+} else {
+    fail "exits.8 missing 'ff d1' -- CALL* CX not encoded correctly"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+
+send_log "Testing: exits.8 'je' appears at offset 9 before CALL* CX at offset b\n"
+# Test 39: The short JE opcode byte (0x74) must appear in the disassembly.
+# A long form (0f 84) would also be acceptable, but for exits (auto_size=0)
+# the displacement is small so the short form is expected.
+if { [regexp {74} $got_exits_d] || [regexp {0f\s*84} $got_exits_d] } {
+    pass "exits.8 JEQ short/long form opcode (74 or 0f 84) found in disassembly"
+} else {
+    fail "exits.8 missing JEQ opcode (74 / 0f 84) in raw bytes"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+
+send_log "Testing: exits.8 direct CALL _exits uses E8\n"
+# Test 40: exits.8 disassembly must contain 'e8' (direct CALL _exits).
+# The skip target is a direct CALL to _exits via E8 rel32.
+if { [regexp {e8} $got_exits_d] } {
+    pass "exits.8 CALL _exits encoded as direct E8"
+} else {
+    fail "exits.8 missing E8 -- CALL _exits not encoded as direct call"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+
+send_log "Testing: exits.8 has no indirect call-through-memory (ff 15)\n"
+# Test 41: exits.8 must NOT contain 'ff 15' (indirect call through abs32 memory).
+# This encoding would mean an external CALL was wrongly turned into an
+# indirect-through-memory call (the earlier Part I bug pattern).
+if { ![regexp {ff\s*15} $got_exits_d] } {
+    pass "exits.8 has no indirect call-through-memory (ff 15 absent)"
+} else {
+    fail "exits.8 contains 'ff 15' -- external CALL incorrectly indirect"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+
