@@ -492,9 +492,11 @@ if { [regexp -nocase {PC32|pc32|pcrel|R_386_PC32} $got_reloc] } {
     send_log "objdump -r output was:\n$got_reloc\n"
 }
 
-# Test 28: The PC32 reloc addend must be -4 (displayed as "-0x4" or "-4").
+# Test 28: The PC32 reloc addend must be -4.
 # An addend of 0 would cause the call to land 4 bytes into the target.
-if { [regexp {-0[xX]4|-4\b} $got_reloc] } {
+# objdump displays -4 as "-0x4", "-4", "0xfffffffc" (32-bit), or
+# "0xfffffffffffffffc" (64-bit host); all contain the pattern "fffffffc".
+if { [regexp -nocase {-0x4|-4\b|fffffffc} $got_reloc] } {
     pass "main9.8 PC32 reloc has correct addend -4 for E8 rel32 CALL"
 } else {
     fail "main9.8 PC32 reloc missing addend -4 -- CALL would land 4 bytes past target"
@@ -514,5 +516,99 @@ if { ![regexp {ff\s*e8} $got_main9] } {
 } else {
     fail "main9.8 disassembly contains 'ff e8' -- possible wrong CALL encoding"
     send_log "objdump -d output was:\n$got_main9\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests 30-35: PC32 relocation precision and call-target correctness.
+#
+# Background: The symptom in t04.exe was that the CALL inside write() (from
+# write.8) called address 0x10f5 (inside main) instead of pwrite at 0x10ca.
+# Root cause was pcrel_offset=FALSE in the PC32 howto, which produced:
+#   disp32 = sym_VMA - 4 - section_VMA
+#   CPU target = section_VMA + r->address + 4 + disp32 = sym_VMA + r->address
+# With r->address=0x2b, target = pwrite_VMA + 0x2b = 0x10f5 (wrong).
+#
+# Fix: pcrel_offset=TRUE with addend=-4:
+#   disp32 = sym_VMA - 4 - section_VMA - r->address
+#   CPU target = section_VMA + r->address + 4 + disp32 = sym_VMA ✓
+#
+# callmain.8 has CALL exits (direct call to external symbol) at text offset
+# 0x34 (E8 opcode) with disp32 field at offset 0x35.  This mirrors the
+# write() → pwrite() scenario exactly.
+#
+# Tests below verify that:
+#  - E8 is at the CALL site (direct-call opcode)
+#  - PC32 reloc is at offset 0x35 (E8+1 = disp32 field, not the opcode)
+#  - Addend is -4
+#  - No ff 15 (indirect call through memory) or ff e8 wrong byte sequence
+#
+# Together these prove the CPU will compute: target = sym_VMA ✓
+# -----------------------------------------------------------------------
+send_log "Testing: callmain.8 CALL exits uses direct E8 at offset 0x34\n"
+# $fixture is set to callmain.8 at the top of this file.
+# got15 already holds the callmain.8 disassembly from test 14; reuse it.
+set got_callmain_d $got15
+set got_callmain_r [binutils_run $OBJDUMP "-r $fixture"]
+
+# Test 30: callmain.8 disassembly shows E8 at offset 0x34 (CALL exits direct).
+# The disassembly line must include both "34" (the offset) and "e8" (the opcode).
+if { [regexp {34:.*e8} $got_callmain_d] } {
+    pass "callmain.8 CALL exits encoded as direct E8 at offset 0x34"
+} else {
+    fail "callmain.8 missing direct E8 at offset 0x34 for CALL exits"
+    send_log "objdump -d output was:\n$got_callmain_d\n"
+}
+
+# Test 31: callmain.8 PC32 reloc is at offset 0x35 (disp32 field = E8+1).
+# This confirms that the reloc points to the 4-byte displacement field,
+# NOT to the E8 opcode byte -- the critical requirement for correct linking.
+# With pcrel_offset=TRUE the formula uses r->address to adjust; if r->address
+# pointed to E8 (0x34) instead of the field (0x35), the result would be wrong.
+if { [regexp {00000035.*PC32} $got_callmain_r] } {
+    pass "callmain.8 PC32 reloc at offset 0x35 (disp32 field position)"
+} else {
+    fail "callmain.8 PC32 reloc not at expected offset 0x35"
+    send_log "objdump -r output was:\n$got_callmain_r\n"
+}
+
+# Test 32: callmain.8 PC32 reloc addend is -4.
+# With pcrel_offset=TRUE and addend=-4:
+#   CPU target = sym_VMA + addend + 4 = sym_VMA ✓
+# Without addend=-4 (e.g., addend=0): target = sym_VMA + 4 (wrong).
+if { [regexp -nocase {-0x4|-4\b|fffffffc} $got_callmain_r] } {
+    pass "callmain.8 PC32 reloc has correct addend -4"
+} else {
+    fail "callmain.8 PC32 reloc missing addend -4 -- CALL target would be sym+4"
+    send_log "objdump -r output was:\n$got_callmain_r\n"
+}
+
+# Test 33: callmain.8 PC32 reloc refers to 'exits' (the external callee symbol).
+if { [regexp {exits} $got_callmain_r] } {
+    pass "callmain.8 PC32 reloc targets external symbol 'exits'"
+} else {
+    fail "callmain.8 PC32 reloc does not reference 'exits'"
+    send_log "objdump -r output was:\n$got_callmain_r\n"
+}
+
+# Test 34: callmain.8 disassembly does NOT contain 'ff 15' (call *abs32).
+# This is the wrong indirect-through-memory encoding that caused the 9front
+# crash: the CPU would read 4 bytes at the callee's address as a pointer and
+# jump to garbage.  Fixed by emitting E8/E9 rel32 for P9D_EXTERN calls.
+if { ![regexp {ff\s*15} $got_callmain_d] } {
+    pass "callmain.8 has no indirect call-through-memory encoding (ff 15 absent)"
+} else {
+    fail "callmain.8 contains 'ff 15' -- external CALL incorrectly indirect"
+    send_log "objdump -d output was:\n$got_callmain_d\n"
+}
+
+# Test 35: callmain.8 disassembly does NOT contain 'ff e8'.
+# 'ff e8' is the wrong byte sequence that would appear if the instruction
+# boundary was off (e.g., PUSH $-1 followed by E8 CALL being mis-read as
+# a single far-jump instruction).
+if { ![regexp {ff\s*e8} $got_callmain_d] } {
+    pass "callmain.8 has no 'ff e8' encoding (no wrong instruction boundary)"
+} else {
+    fail "callmain.8 contains 'ff e8' -- possible wrong instruction boundary"
+    send_log "objdump -d output was:\n$got_callmain_d\n"
 }
 

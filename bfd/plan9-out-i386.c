@@ -3153,6 +3153,17 @@ plan9_out_i386_object_p (bfd *abfd)
       /* Flag contents as present (size > 0 sections) */
       if (td2->text_size == 0) text_sec->flags &= ~SEC_HAS_CONTENTS;
       if (td2->data_size == 0) data_sec->flags &= ~SEC_HAS_CONTENTS;
+      /* Mark sections with relocations */
+      if (td2->text_nrelocs > 0)
+        {
+          text_sec->flags |= SEC_RELOC;
+          text_sec->reloc_count = td2->text_nrelocs;
+        }
+      if (td2->data_nrelocs > 0)
+        {
+          data_sec->flags |= SEC_RELOC;
+          data_sec->reloc_count = td2->data_nrelocs;
+        }
     }
 
   return abfd->xvec;
@@ -3230,9 +3241,15 @@ static long
 plan9_out_i386_canonicalize_reloc (bfd *abfd, asection *sec,
                                     arelent **relpp, asymbol **syms ATTRIBUTE_UNUSED)
 {
-  struct plan9_out_i386_tdata *td = plan9_out_i386_tdata (abfd);
+  struct plan9_out_i386_tdata *td;
   struct plan9_out_i386_reloc *recs = NULL;
   unsigned int n = 0, i;
+
+  /* Ensure sym_ptrs[] is populated so we can build arelent.sym_ptr_ptr.  */
+  if (!p9obj_slurp_symtab (abfd))
+    { relpp[0] = NULL; return 0; }
+
+  td = plan9_out_i386_tdata (abfd);
 
   if (strcmp (sec->name, ".text") == 0)
     { recs = td->text_relocs; n = td->text_nrelocs; }
