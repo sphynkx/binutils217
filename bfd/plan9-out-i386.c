@@ -3250,7 +3250,16 @@ plan9_out_i386_canonicalize_reloc (bfd *abfd, asection *sec,
       else
         { relpp[i] = NULL; continue; }
       r->address     = (bfd_vma) recs[i].section_offset;
-      r->addend      = 0;
+      /* For x86 PC-relative CALL/JMP rel32, the field encodes the
+         displacement relative to the END of the instruction (i.e. the byte
+         AFTER the 4-byte displacement field).  BFD's reloc formula with
+         pcrel_offset=FALSE computes:
+           field = sym_VMA - (section_VMA + r->address) + addend
+         The CPU computes target = (field_VMA + 4) + field, so:
+           target = sym_VMA + addend + 4
+         To land exactly at sym_VMA we need addend = -4.  Absolute
+         (non-PC-relative) relocations use addend = 0.  */
+      r->addend      = recs[i].pc_relative ? -4 : 0;
       r->howto       = &plan9_out_i386_howto_table[recs[i].pc_relative ? 1 : 0];
       relpp[i] = r;
     }

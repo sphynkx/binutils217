@@ -462,3 +462,54 @@ if { ![regexp {ff\s*15} $got15] } {
     send_log "objdump -d output was:\n$got15\n"
 }
 
+# -----------------------------------------------------------------------
+# Tests 27-29: PC-relative CALL relocation addend correctness.
+#
+# For an x86 CALL rel32 ("E8 disp32"), the CPU computes the call target as:
+#   target = (field_address + 4) + disp32
+# The BFD linker (pcrel_offset=FALSE) stores:
+#   disp32 = sym_VMA - field_VMA + addend
+# To land at sym_VMA we need addend = -4.
+#
+# Without the fix (addend=0), the call lands at sym_VMA + 4 (4 bytes into
+# the target function's code), causing a page fault or wrong execution.
+# With the fix (addend=-4), the call lands exactly at sym_VMA.
+#
+# Verify via "objdump -r": the PC32 reloc for the external CALL in main9.8
+# must have an addend of -4, shown as "-0x4" in the objdump output.
+# -----------------------------------------------------------------------
+send_log "Testing: objdump -r on main9.8 shows a PC32 relocation for _callmain\n"
+set got_reloc [binutils_run $OBJDUMP "-r $main9_fixture"]
+
+# Test 27: objdump -r output must contain a PC32 (pc-relative) relocation.
+if { [regexp -nocase {PC32|pc32|pcrel|R_386_PC32} $got_reloc] } {
+    pass "main9.8 has a PC32 relocation for external CALL"
+} else {
+    fail "main9.8 missing PC32 relocation for external CALL"
+    send_log "objdump -r output was:\n$got_reloc\n"
+}
+
+# Test 28: The PC32 reloc addend must be -4 (displayed as "-0x4" or "-4").
+# An addend of 0 would cause the call to land 4 bytes into the target.
+if { [regexp {-0[xX]4|-4\b} $got_reloc] } {
+    pass "main9.8 PC32 reloc has correct addend -4 for E8 rel32 CALL"
+} else {
+    fail "main9.8 PC32 reloc missing addend -4 -- CALL would land 4 bytes past target"
+    send_log "objdump -r output was:\n$got_reloc\n"
+}
+
+# Test 29: The disassembly must NOT contain the bytes "ff e8" as a 2-byte
+# sequence in the .text disassembly.  "ff e8" decodes as LJMPF *%eax which
+# is an invalid far-jump instruction -- it indicates a missing instruction
+# boundary (e.g., the last byte 0xff of a "push $-1" followed by the 0xe8
+# CALL opcode is being mis-decoded as a single instruction).
+# This test guards against the specific mis-encoding reported where
+# "ff e8 5b 00 00 00" appeared at the write()->pwrite() call site.
+send_log "Testing: main9.8 disassembly does not contain 'ff e8' (wrong CALL encoding)\n"
+if { ![regexp {ff\s*e8} $got_main9] } {
+    pass "main9.8 disassembly does not contain 'ff e8' (no LJMPF *%%eax)"
+} else {
+    fail "main9.8 disassembly contains 'ff e8' -- possible wrong CALL encoding"
+    send_log "objdump -d output was:\n$got_main9\n"
+}
+
