@@ -409,3 +409,56 @@ if { [regexp {[Tt]\s+main} $got_nm_reloc] } {
     send_log "nm output was: $got_nm_reloc\n"
 }
 
+# -----------------------------------------------------------------------
+# Tests for CALL/JMP to external symbol encoding (direct E8/E9 rel32).
+#
+# In Plan 9 assembler, "CALL sym(SB)" is a direct near-call (E8 rel32).
+# Before the fix, p9_oclass() returned Ym for P9D_EXTERN/P9D_STATIC, so
+# the instruction selector picked Zo_m (FF /2 = indirect call through
+# absolute memory address), generating "call *0x10cd" instead of a direct
+# "call <sym>".  The CPU then dereferenced address 0x10cd as a function
+# pointer, reading the first 4 bytes of pwrite stub code (0x33b8...) and
+# jumping there, causing "page fault 0x33b8".
+#
+# After the fix, p9_doasm() intercepts CALL/JMP with P9D_EXTERN/P9D_STATIC
+# target before the Ym match and emits E8/E9 rel32 directly.
+#
+# Fixture: main9.8 contains a CALL to "_callmain" (an external symbol).
+# The disassembly must use direct E8 (call) not FF 15 (call *mem).
+# -----------------------------------------------------------------------
+set main9_fixture "$testdir/main9.8"
+set got_main9 [binutils_run $OBJDUMP "-d $main9_fixture"]
+
+# Test 24: disassembly of main9.8 must NOT contain "ff 15" (CALL *abs32).
+# "ff 15 xx xx xx xx" = call *0xXXXXXX (indirect through absolute memory).
+# This is the wrong encoding for CALL to external symbol in Plan 9.
+# Before the fix: CALL _callmain(SB) generated FF 15 (indirect), not E8.
+send_log "Testing: main9.8 does not contain indirect call-through-memory (ff 15)\n"
+if { ![regexp {ff\s*15} $got_main9] } {
+    pass "main9.8 CALL to external symbol uses direct E8, not indirect FF 15"
+} else {
+    fail "main9.8 contains 'ff 15' (indirect call-through-memory) -- CALL encoding wrong"
+    send_log "objdump -d output was:\n$got_main9\n"
+}
+
+# Test 25: disassembly of main9.8 must contain "e8" (direct CALL rel32).
+# main9.8 contains a CALL to _callmain (external symbol).
+# After the fix, this must encode as E8 rel32 (direct near-call).
+send_log "Testing: main9.8 CALL to _callmain uses direct E8 rel32\n"
+if { [regexp {\se8\s} $got_main9] } {
+    pass "main9.8 CALL to external symbol encoded as direct E8 rel32"
+} else {
+    fail "main9.8 does not contain direct E8 call -- external CALL not encoded as E8"
+    send_log "objdump -d output was:\n$got_main9\n"
+}
+
+# Test 26: callmain.8 must also not contain any ff 15 (all external CALLs direct).
+# callmain.8 may call external libc symbols; none should use indirect FF 15.
+send_log "Testing: callmain.8 does not contain indirect call-through-memory (ff 15)\n"
+if { ![regexp {ff\s*15} $got15] } {
+    pass "callmain.8 has no indirect call-through-memory encoding (ff 15 absent)"
+} else {
+    fail "callmain.8 contains 'ff 15' -- external CALL incorrectly encoded as indirect"
+    send_log "objdump -d output was:\n$got15\n"
+}
+

@@ -1828,6 +1828,23 @@ p9_doasm (p9_EncCtx *ctx, const p9_Prog *p, const p9_Prog *progs, int nprogs,
   }
   if (pre) *ctx->andptr++ = (unsigned char) pre;
 
+  /* CALL/JMP to external symbol: must emit direct E8/E9 rel32, not FF/2 or
+     FF/4 (indirect-through-memory).  In Plan 9 assembler "CALL sym(SB)"
+     means a direct near-call; only "CALL *(mem)" is indirect.
+     p9_oclass() maps P9D_EXTERN/P9D_STATIC to Ym which would pick Zo_m
+     (FF /2) before the Zcall/Zjmp (E8/E9) entries in p9_ycall/p9_yjmp, so
+     we intercept here and emit the direct form explicitly.  */
+  if ((p->as == P9AS_CALL || p->as == P9AS_JMP)
+      && (p->to.type == P9D_EXTERN || p->to.type == P9D_STATIC)
+      && p->to.sym >= 0)
+    {
+      long fpc;
+      *ctx->andptr++ = (p->as == P9AS_CALL) ? 0xe8 : 0xe9;
+      fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
+      p9_put4 (ctx, 0, p->to.sym, 1, fpc);
+      return;
+    }
+
   ft = p9_oclass (&p->from) * Ymax;
   tt = p9_oclass (&p->to)   * Ymax;
   t  = o->ytab;
