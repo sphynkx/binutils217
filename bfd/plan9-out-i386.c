@@ -3194,9 +3194,13 @@ static reloc_howto_type plan9_out_i386_howto_table[] =
   /* 0 – absolute 32-bit */
   HOWTO (0, 0, 2, 32, FALSE, 0, complain_overflow_dont,
          NULL, "ABS32", FALSE, 0, 0xffffffff, FALSE),
-  /* 1 – PC-relative 32-bit (call/jmp; addend = -4 already in instr) */
+  /* 1 – PC-relative 32-bit (call/jmp).
+     pcrel_offset=TRUE: BFD subtracts r->address from the relocation so the
+     field gets  disp32 = sym_VMA + addend - (sec_VMA + output_offset + r->addr).
+     addend=-4 then produces the correct x86 displacement
+       disp32 = sym_VMA - next_IP  (next_IP = field_VMA + 4).  */
   HOWTO (1, 0, 2, 32, TRUE,  0, complain_overflow_dont,
-         NULL, "PC32",  FALSE, 0, 0xffffffff, FALSE),
+         NULL, "PC32",  FALSE, 0, 0xffffffff, TRUE),
 };
 
 static reloc_howto_type *
@@ -3250,15 +3254,18 @@ plan9_out_i386_canonicalize_reloc (bfd *abfd, asection *sec,
       else
         { relpp[i] = NULL; continue; }
       r->address     = (bfd_vma) recs[i].section_offset;
-      /* For x86 PC-relative CALL/JMP rel32, the field encodes the
-         displacement relative to the END of the instruction (i.e. the byte
-         AFTER the 4-byte displacement field).  BFD's reloc formula with
-         pcrel_offset=FALSE computes:
-           field = sym_VMA - (section_VMA + r->address) + addend
-         The CPU computes target = (field_VMA + 4) + field, so:
-           target = sym_VMA + addend + 4
-         To land exactly at sym_VMA we need addend = -4.  Absolute
-         (non-PC-relative) relocations use addend = 0.  */
+      /* For x86 PC-relative CALL/JMP rel32, the x86 CPU computes:
+           target = next_IP + disp32
+                  = (field_VMA + 4) + disp32
+         so the correct displacement is: disp32 = sym_VMA - next_IP.
+         BFD's reloc formula with pcrel_offset=TRUE (our PC32 howto) is:
+           field = sym_VMA + addend - (sec_VMA + output_offset + r->address)
+                 = sym_VMA + addend - field_VMA
+         CPU target = field_VMA + 4 + field
+                    = field_VMA + 4 + sym_VMA + addend - field_VMA
+                    = sym_VMA + addend + 4
+         Setting addend = -4 lands exactly at sym_VMA.
+         Absolute (non-PC-relative) relocations use addend = 0.  */
       r->addend      = recs[i].pc_relative ? -4 : 0;
       r->howto       = &plan9_out_i386_howto_table[recs[i].pc_relative ? 1 : 0];
       relpp[i] = r;

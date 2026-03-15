@@ -467,13 +467,16 @@ if { ![regexp {ff\s*15} $got15] } {
 #
 # For an x86 CALL rel32 ("E8 disp32"), the CPU computes the call target as:
 #   target = (field_address + 4) + disp32
-# The BFD linker (pcrel_offset=FALSE) stores:
-#   disp32 = sym_VMA - field_VMA + addend
+# The BFD linker with pcrel_offset=TRUE (our PC32 howto) stores:
+#   disp32 = sym_VMA + addend - (sec_VMA + output_offset + r->address)
+#           = sym_VMA + addend - field_VMA
+# CPU target = field_VMA + 4 + disp32 = sym_VMA + addend + 4
 # To land at sym_VMA we need addend = -4.
 #
-# Without the fix (addend=0), the call lands at sym_VMA + 4 (4 bytes into
-# the target function's code), causing a page fault or wrong execution.
-# With the fix (addend=-4), the call lands exactly at sym_VMA.
+# Without the fix (addend=0, pcrel_offset=FALSE), the call landed at
+# sym_VMA + r->address + 4 (off by the field's section offset), causing a
+# fault at the wrong address.  With addend=-4 and pcrel_offset=TRUE, the
+# call lands exactly at sym_VMA.
 #
 # Verify via "objdump -r": the PC32 reloc for the external CALL in main9.8
 # must have an addend of -4, shown as "-0x4" in the objdump output.
