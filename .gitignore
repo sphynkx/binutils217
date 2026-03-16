@@ -1,1 +1,54 @@
-t.*
+# Build artifacts
+*.o
+*.lo
+*.la
+*.lai
+*.a
+libtool
+Makefile
+config.h
+config.cache
+config.log
+config.status
+configure.lineno
+stamp-h*
+stamp-lib
+stamp-ofiles
+stamp-picdir
+
+# Generated headers and files
+bfd/bfd.h
+bfd/bfd-in3.h
+bfd/bfdver.h
+bfd/elf32-target.h
+bfd/elf64-target.h
+bfd/peigen.c
+bfd/targmatch.h
+bfd/ofiles
+bfd/stmp-bfd-h
+bfd/doc/chew
+gas/obj-format.h
+gas/targ-cpu.h
+gas/targ-env.h
+gas/itbl-cpu.h
+gas/.gdbinit
+intl/libintl.h
+intl/po2tbl.sed
+
+# .libs directories
+.libs/
+
+# po generated files
+po/Makefile
+po/Makefile.in
+po/POTFILES
+po/BLD-POTFILES
+po/SRC-POTFILES
+
+# Various generated output
+serdep.tmp
+ld/tdirs
+libiberty/needed-list
+libiberty/required-list
+libiberty/xhost-mkfrag
+binutils/doc/c++filt.1
