@@ -41,6 +41,7 @@ bfd/elf64-target.h
 bfd/peigen.c
 bfd/config.h
 bfd/ofiles
+bfd/doc/chew
 binutils/config.h
 gas/config.h
 gas/obj-format.h
@@ -60,6 +61,18 @@ intl/libintl.h
 intl/po2tbl.sed
 */Makefile.in~
 */stamp-h1
+# Generated po infrastructure (not .in template files)
+bfd/po/Makefile.in
+bfd/po/BLD-POTFILES
+bfd/po/SRC-POTFILES
+binutils/po/Makefile.in
+binutils/po/POTFILES
+gas/po/Makefile.in
+gas/po/POTFILES
+ld/po/Makefile.in
+ld/po/POTFILES
+opcodes/po/Makefile.in
+opcodes/po/POTFILES
 binutils/objdump
 binutils/nm
 binutils/readelf
