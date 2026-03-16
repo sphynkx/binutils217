@@ -1,8 +1,6 @@
 t.*
-# Build artifacts
-*.o
+# Build artifacts (not testsuite fixtures)
 *.lo
-*.a
 *.la
 *.lai
 libtool
@@ -15,6 +13,23 @@ config.status
 configure.lineno
 *.log
 .libs/
+# Compiled objects (except testsuite fixtures)
+[^/]*.o
+bfd/*.o
+binutils/*.o
+gas/*.o
+ld/*.o
+libiberty/*.o
+opcodes/*.o
+intl/*.o
+# Static libraries (not testsuite)
+bfd/*.a
+binutils/*.a
+gas/*.a
+ld/*.a
+libiberty/*.a
+opcodes/*.a
+intl/*.a
 # Generated files from configure/make
 Makefile
 bfd/bfd.h
