@@ -2262,14 +2262,16 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
   long data_total  = 0;   /* total .data bytes                       */
   long bss_total   = 0;   /* total .bss bytes                        */
 
-  /* Plan 9 assembler instruction counter.  The 8a assembler assigns a
-     sequential "pc" to every non-ANAME record in the .8 stream (including
-     AHISTORY, ATEXT, AGLOBL, ADATA, and all real instructions).  D_BRANCH
-     target offsets in the .8 file are this file-global counter value; they
-     are NOT byte offsets into the encoded text.  We store this value in
-     p9_Prog.back so that branch-target resolution can find the right entry
-     in progs_all[] by matching back == target_pc instead of comparing byte
-     offsets (which would always fail for any non-trivial instruction).  */
+  /* Function-relative instruction counter used for D_BRANCH resolution.
+     In Plan 9 .8 files, D_BRANCH target offsets are FUNCTION-RELATIVE
+     instruction indices: the ATEXT record itself is index 0, the first
+     real instruction is 1, the second is 2, and so on.  They are NOT
+     byte offsets into the encoded text and NOT file-global counters.
+     This counter is reset to 0 at each ATEXT record (see below) and
+     incremented for every subsequent non-ANAME record (including
+     AHISTORY records within the function body, which 8a also counts).
+     The resulting value is stored in p9_Prog.back; branch-target
+     resolution matches back == D_BRANCH.offset.  */
   int global_plan9_pc = 0;
 
   /* Encoding context */
@@ -2386,6 +2388,16 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
           {
             p9_Adr from_a, to_a;
             int fr, tr;
+
+            /* D_BRANCH targets in Plan 9 .8 files are function-relative
+               instruction indices where ATEXT itself = 0.  Reset the
+               counter here so that progs[].back values match what 8a/8l
+               stores in D_BRANCH.offset.  The common global_plan9_pc++
+               at the bottom of the loop will advance it to 1 for the
+               first real instruction, which is correct (TEXT=0, first
+               real instr=1, …).  */
+            global_plan9_pc = 0;
+
             fr = p9_read_zaddr (buf + pos + 6, rem - 6,
                                  &from_a, h_symidx, 256);
             tr = p9_read_zaddr (buf + pos + 6 + (fr > 0 ? fr : 0),
@@ -2441,7 +2453,7 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
             progs[nprogs].from = from_a;
             progs[nprogs].to   = to_a;
             progs[nprogs].pcond_idx = -1;
-            progs[nprogs].back = global_plan9_pc;  /* Plan 9 pc of this TEXT record */
+            progs[nprogs].back = global_plan9_pc;  /* = 0 (function-relative) */
             /* Store function sym idx in a spare field for later */
             progs[nprogs].pc   = (cur_text_sym >= 0) ? cur_text_sym : -1;
             nprogs++;
@@ -2583,13 +2595,13 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
             progs[nprogs].as   = (short) opcode;
             progs[nprogs].from = from_a;
             progs[nprogs].to   = to_a;
-            progs[nprogs].back = global_plan9_pc;  /* Plan 9 pc for branch resolution */
+            progs[nprogs].back = global_plan9_pc;  /* function-relative index */
             progs[nprogs].pcond_idx = -1;
             nprogs++;
           }
 
         pos += 2 + 4 + (bfd_size_type)fsz + (bfd_size_type)tsz;
-        global_plan9_pc++;  /* count every non-ANAME record */
+        global_plan9_pc++;  /* count every non-ANAME record (function-relative) */
       }
     } /* end while */
 
@@ -2800,12 +2812,11 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
 
   /* Now resolve branch targets and iterate */
   /* Resolve D_BRANCH target offsets to indices in progs_all[].
-     In the Plan 9 .8 format, a D_BRANCH address stores the target
-     instruction's file-global instruction counter value (the "Plan 9 pc")
-     in the offset field.  This counter increments for every non-ANAME
-     record, including AHISTORY, ATEXT, AGLOBL, ADATA, and all real
-     instructions.  It is NOT a byte offset into the encoded text.
-     We stored this Plan 9 pc in progs_all[j].back when reading the file,
+     In Plan 9 .8 files, D_BRANCH.offset is a FUNCTION-RELATIVE instruction
+     index where ATEXT itself = 0, the first real instruction = 1, etc.
+     It is NOT a byte offset into the encoded text and NOT a file-global
+     counter.  We stored this function-relative index in progs_all[j].back
+     (reset to 0 at each ATEXT; see the global_plan9_pc reset above),
      so we match target_pc against .back rather than .pc (byte offset).
      Synthetic ADJSP entries have back==-1 and are never branch targets.  */
   for (i = 0; i < nprogs_all; i++)

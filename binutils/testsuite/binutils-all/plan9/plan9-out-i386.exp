@@ -615,38 +615,35 @@ if { ![regexp {ff\s*e8} $got_callmain_d] } {
 # -----------------------------------------------------------------------
 # Tests 36-41: Conditional branch (JEQ/JCC) encoding in exits.8
 #
-# exits.8 encodes the exits() libc function:
-#   TEXT exits+0(SB),$0
-#   MOVL _onexit+0(SB),CX    ; load function pointer
-#   CMPL CX,$0               ; is _onexit set?
-#   JEQ  skip                ; D_BRANCH → if NULL, skip the call
-#   CALL* CX                 ; call _onexit()
+# exits.8 is the real 9front exits() from libc/port/exits.c:
+#   TEXT exits+0(SB),$8         ; auto_size=8 → synthesised ADJSP
+#   MOVL _onexit+0(SB),CX       ; load atexit function pointer
+#   CMPL CX,$0                  ; is _onexit set?
+#   JEQ  skip                   ; D_BRANCH target = func-relative PC 5
+#   CALL* CX                    ; call _onexit() only when != NULL
 # skip:
-#   CALL _exits(SB)          ; call _exits(msg)
-#   RET
+#   <arg setup for _exits>
+#   CALL _exits(SB)             ; call _exits(msg)
+#   ...
 #
 # Root cause of the JEQ bug: plan9-out-i386 resolved branch targets by
-# comparing progs_all[j].pc (byte offset from span pass) against the
-# D_BRANCH target offset stored in the .8 file, which is the Plan 9
-# global instruction counter ("Plan 9 pc").  These are different things:
-#   - Plan 9 pc: incremented once per instruction record (counts AHISTORY,
-#     ATEXT, etc.), stored in D_BRANCH.offset
-#   - byte offset: assigned during span(), counting actual encoded bytes
-# The comparison always failed → pcond_idx stayed -1 → the Zbr encoding
-# case emitted 0 bytes → JEQ was silently dropped.
+# comparing progs_all[j].back (which stored a FILE-GLOBAL instruction
+# counter) against the D_BRANCH.offset value from the .8 file.
+# D_BRANCH.offset is a FUNCTION-RELATIVE index where ATEXT=0; using a
+# file-global counter caused the comparison to always fail, so
+# pcond_idx stayed -1 and the Zbr case emitted 0 bytes → JEQ dropped.
 #
-# Fix: store the Plan 9 pc in p9_Prog.back when reading the .8 file;
-# resolve D_BRANCH targets by matching .back == target_pc instead of
-# .pc == target_pc.  After resolution pcond_idx is valid and Zbr emits
-# the correct short/long Jcc instruction.
+# Fix: reset global_plan9_pc=0 at each ATEXT so that progs[].back
+# stores function-relative indices matching D_BRANCH.offset values.
 #
-# Expected encoding of exits (auto_size=0, no ADJSP):
-#   0: 8b 0d XX XX XX XX   mov    0x0,%ecx      (load _onexit; reloc)
-#   6: 83 f9 00             cmp    $0x0,%ecx
-#   9: 74 02                je     0xd           (skip CALL* CX)
-#   b: ff d1                call   *%ecx         (CALL* CX)
-#   d: e8 XX XX XX XX       call   0x12          (CALL _exits; reloc)
-#  12: c3                   ret
+# Expected encoding (auto_size=8, ADJSP present):
+#   0: 83 ec 08             sub    $0x8,%esp       (synthesised ADJSP)
+#   3: 8b 0d XX XX XX XX   mov    _onexit,%ecx     (reloc)
+#   9: 83 f9 00             cmp    $0x0,%ecx
+#   c: 74 XX               je     skip             (skip CALL* CX)
+#   e: ff d1               call   *%ecx
+# skip:
+#  ...  e8 XX XX XX XX      call   _exits           (reloc)
 # -----------------------------------------------------------------------
 set exits_fixture "$testdir/exits.8"
 set got_exits_d [binutils_run $OBJDUMP "-d $exits_fixture"]
@@ -711,6 +708,21 @@ if { ![regexp {ff\s*15} $got_exits_d] } {
     pass "exits.8 has no indirect call-through-memory (ff 15 absent)"
 } else {
     fail "exits.8 contains 'ff 15' -- external CALL incorrectly indirect"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+
+send_log "Testing: exits.8 does not have CMP immediately followed by CALL* (no JCC between them)\n"
+# Test 42: exits.8 must NOT contain the broken byte sequence 83 f9 00 ff d1
+# (CMPL CX,$0 followed immediately by CALL* CX with no conditional jump between them).
+# This exact sequence is what gets emitted when the JEQ branch target resolution
+# fails (back values don't match D_BRANCH.offset) and the JEQ instruction is
+# silently dropped, leaving CMPL → CALL* with no guard.
+# With the fix (function-relative back values reset to 0 at each ATEXT), the JEQ
+# resolves correctly and 74 XX appears between 83 f9 00 and ff d1.
+if { ![regexp {83\s*f9\s*00\s*ff\s*d1} $got_exits_d] } {
+    pass "exits.8 no direct CMPL-then-CALL*CX (JCC correctly inserted)"
+} else {
+    fail "exits.8 broken: CMPL followed directly by CALL*CX (JEQ dropped -- D_BRANCH resolution bug)"
     send_log "objdump -d output was:\n$got_exits_d\n"
 }
 
