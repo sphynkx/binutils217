@@ -2780,14 +2780,30 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
   /* Now resolve branch targets and iterate */
   /* Resolve D_BRANCH target offsets to indices in progs_all[].
      D_BRANCH.offset is FUNCTION-RELATIVE instruction index (ATEXT=0, first real=1...).
-     We stored this function-relative index in progs_all[j].back, so match against that. */
+     We stored this function-relative index in progs_all[j].back.
+     IMPORTANT: search only within the current function to avoid matching the same
+     back value from a different function (global_plan9_pc resets to 0 at each ATEXT,
+     so back values are not unique across functions when multiple .8 files are linked).  */
   for (i = 0; i < nprogs_all; i++)
     {
       if (progs_all[i].to.type == P9D_BRANCH)
         {
           long target_pc = progs_all[i].to.offset;
           int j, best = -1;
-          for (j = 0; j < nprogs_all; j++)
+          int func_start, func_end;
+
+          /* Find the start of the current function: walk back to nearest ATEXT.  */
+          func_start = i;
+          while (func_start > 0 && progs_all[func_start].as != P9AS_TEXT)
+            func_start--;
+
+          /* Find the end of the current function: first ATEXT after i (exclusive).  */
+          func_end = i + 1;
+          while (func_end < nprogs_all && progs_all[func_end].as != P9AS_TEXT)
+            func_end++;
+
+          /* Search only within [func_start, func_end).  */
+          for (j = func_start; j < func_end; j++)
             {
               if (progs_all[j].back == target_pc)
                 { best = j; break; }

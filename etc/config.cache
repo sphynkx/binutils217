@@ -11,9 +11,9 @@
 # loading this file, other *unset* `ac_cv_foo' will be assigned the
 # following values.
 
-ac_cv_env_build_alias_set=set
-ac_cv_env_build_alias_value=x86_64-unknown-linux-gnu
-ac_cv_env_host_alias_set=set
-ac_cv_env_host_alias_value=x86_64-unknown-linux-gnu
-ac_cv_env_target_alias_set=set
-ac_cv_env_target_alias_value=x86_64-unknown-linux-gnu
+ac_cv_env_build_alias_set='set'
+ac_cv_env_build_alias_value='x86_64-unknown-linux-gnu'
+ac_cv_env_host_alias_set='set'
+ac_cv_env_host_alias_value='x86_64-unknown-linux-gnu'
+ac_cv_env_target_alias_set='set'
+ac_cv_env_target_alias_value='x86_64-unknown-linux-gnu'
