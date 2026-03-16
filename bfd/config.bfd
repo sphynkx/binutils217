@@ -621,7 +621,7 @@ case "${targ}" in
     ;;
   i386-*-plan9*)
     targ_defvec=plan9_i386_vec
-    targ_selvecs=plan9_i386_vec
+    targ_selvecs="plan9_i386_vec plan9_out_i386_vec"
     targ_underscore=no
     ;;
   i[3-7]86-*-chaos)

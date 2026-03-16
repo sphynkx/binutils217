@@ -24,6 +24,9 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 #define OBJ_HEADER "obj-plan9.h"
 
 #include "as.h"
+#include "subsegs.h"
+#include "safe-ctype.h"
+
 
 #undef NO_RELOC
 #include "aout/aout64.h"
@@ -33,9 +36,244 @@ Software Foundation, 59 Temple Place - Suite 330, Boston, MA
 static void obj_plan9_line PARAMS ((int));
 static void obj_plan9_weak PARAMS ((int));
 static void obj_plan9_type PARAMS ((int));
+static void obj_plan9_section (int);
+static void obj_plan9_comm (int);
+
+
+// in gas/config/obj-plan9.c
+
+static int
+plan9_align_to_pow2 (addressT align_bytes)
+{
+  int p2 = 0;
+  if (align_bytes == 0)
+    return 0;
+  /* Only accept power-of-two alignments.  */
+  while ((align_bytes & 1) == 0)
+    {
+      align_bytes >>= 1;
+      p2++;
+    }
+  if (align_bytes != 1)
+    return 0;
+  return p2;
+}
+
+static void
+obj_plan9_comm (int ignore ATTRIBUTE_UNUSED)
+{
+  char *name;
+  char *end;
+  char c;
+  symbolS *symbolP;
+  addressT size;
+  addressT align_bytes = 0;
+  int align_p2 = 0;
+
+  name = input_line_pointer;
+  c = get_symbol_end ();
+  end = input_line_pointer;
+
+  symbolP = symbol_find_or_make (name);
+  *end = c;
+
+  SKIP_WHITESPACE ();
+  if (*input_line_pointer != ',')
+    {
+      as_bad (_("expected comma after symbol name in .comm"));
+      ignore_rest_of_line ();
+      return;
+    }
+  input_line_pointer++; /* skip comma */
+
+  size = get_absolute_expression ();
+
+  SKIP_WHITESPACE ();
+  if (*input_line_pointer == ',')
+    {
+      input_line_pointer++;
+      align_bytes = get_absolute_expression ();
+      align_p2 = plan9_align_to_pow2 (align_bytes);
+    }
+
+  demand_empty_rest_of_line ();
+
+  /* Allocate in BSS/COMMON.  */
+  bss_alloc (symbolP, size, align_p2);
+}
+
+
+
+/* start of patch1 for fix relocs */
+/* Plan 9 a.out: ensure REL addends for section-based relocations are
+   stored in-place.  GAS fixup processing may collapse local symbol relocs
+   to section symbols and move the symbol value into fx_offset.  For a.out
+   "std" relocs the addend lives in the relocated word, so we must write
+   fx_offset into the field.  */
+
+static void
+obj_plan9_patch_inplace_addends (void)
+{
+  asection *sec;
+
+  for (sec = stdoutput->sections; sec != NULL; sec = sec->next)
+    {
+      segment_info_type *seginfo = seg_info (sec);
+      fixS *fixp;
+
+      if (seginfo == NULL)
+        continue;
+
+      for (fixp = seginfo->fix_root; fixp != NULL; fixp = fixp->fx_next)
+        {
+          symbolS *sym;
+          segT sseg;
+          char *p;
+          valueT v;
+
+          if (fixp->fx_done)
+            continue;
+
+          /* Only handle absolute 32-bit (your failing case).
+             Extend later if needed. */
+          if (fixp->fx_pcrel)
+            continue;
+
+          if (fixp->fx_size != 4)
+            continue;
+
+          sym = fixp->fx_addsy;
+          if (sym == NULL)
+            continue;
+
+          /* We only care about the case where write.c collapsed a local
+             symbol reloc into a section symbol. */
+          if (!symbol_section_p (sym))
+            continue;
+
+          sseg = S_GET_SEGMENT (sym);
+          if (sseg != text_section && sseg != data_section && sseg != bss_section)
+            continue;
+
+          /* Write fx_offset into the relocated field. */
+          p = fixp->fx_frag->fr_literal + fixp->fx_where;
+          v = fixp->fx_offset;
+
+          /* Plan 9 i386 is little-endian. */
+          p[0] = (v      ) & 0xff;
+          p[1] = (v >>  8) & 0xff;
+          p[2] = (v >> 16) & 0xff;
+          p[3] = (v >> 24) & 0xff;
+
+#ifdef DEBUG_PLAN9
+          fprintf (stderr,
+                   "DBG plan9: inplace-addend sec=%s where=%ld size=%d symsec=%s fx_offset=%ld\n",
+                   sec->name,
+                   (long) fixp->fx_where,
+                   fixp->fx_size,
+                   sseg == text_section ? ".text" : (sseg == data_section ? ".data" : ".bss"),
+                   (long) fixp->fx_offset);
+#endif
+        }
+    }
+}
+
+/// replaced temp. with debug-version
+//static void
+//obj_plan9_frob_file_after_relocs (void)
+//{
+//	fprintf(stderr, "DBG plan9: frob_file_after_relocs called\n");
+//  /* Only meaningful for a.out flavour.  */
+//  if (OUTPUT_FLAVOR == bfd_target_aout_flavour)
+//    obj_plan9_patch_inplace_addends ();
+//}
+///////////////static 
+void
+obj_plan9_frob_file_after_relocs (void)
+{
+  asection *sec;
+
+#ifdef DEBUG_PLAN9
+  fprintf (stderr,
+           "DBG plan9: frob_file_after_relocs called (OUTPUT_FLAVOR=%d)\n",
+           (int) OUTPUT_FLAVOR);
+#endif
+
+  /* For Plan 9 a.out (REL-style) relocations, GAS/BFD expect the addend to live
+     in the relocated word. When fixup processing collapses a relocation against
+     a local symbol into a section symbol, the addend typically moves into
+     fx_offset. Ensure the in-place word contains that addend, NOT the section VMA.
+     Writing section->vma here breaks addresses for .data/.rodata references. */
+  if (OUTPUT_FLAVOR != bfd_target_aout_flavour)
+    return;
+
+  for (sec = stdoutput->sections; sec != NULL; sec = sec->next)
+    {
+      segment_info_type *seginfo = seg_info (sec);
+      fixS *fixp;
+
+      if (seginfo == NULL)
+        continue;
+
+      for (fixp = seginfo->fix_root; fixp != NULL; fixp = fixp->fx_next)
+        {
+          symbolS *sym;
+          char *p;
+          valueT v;
+
+          if (fixp->fx_done)
+            continue;
+
+          /* Only handle absolute 32-bit REL addends.  */
+          if (fixp->fx_pcrel)
+            continue;
+          if (fixp->fx_size != 4)
+            continue;
+
+          sym = fixp->fx_addsy;
+          if (sym == NULL)
+            continue;
+
+          /* Only when relocation is against a section symbol (.text/.data/.bss). */
+          if (!symbol_section_p (sym))
+            continue;
+
+          /* Put the addend back into the relocated word. */
+          p = fixp->fx_frag->fr_literal + fixp->fx_where;
+          v = fixp->fx_offset;
+
+          /* Plan 9 i386 is little-endian. */
+          p[0] = (v      ) & 0xff;
+          p[1] = (v >>  8) & 0xff;
+          p[2] = (v >> 16) & 0xff;
+          p[3] = (v >> 24) & 0xff;
+
+#ifdef DEBUG_PLAN9
+          {
+            segT sseg = S_GET_SEGMENT (sym);
+            const char *symseg = (sseg == text_section ? ".text"
+                                : sseg == data_section ? ".data"
+                                : sseg == bss_section  ? ".bss"
+                                : "(other)");
+            fprintf (stderr,
+                     "DBG plan9: wrote in-place addend=%#lx for sectsym=%s at sec=%s where=%ld\n",
+                     (unsigned long) v, symseg, sec->name, (long) fixp->fx_where);
+          }
+#endif
+        }
+    }
+}
+
+/* end of patch1 for fix relocs */
+
+
 
 const pseudo_typeS aout_pseudo_table[] =
 {
+	/* fix old-ported gas.. at first for test.. */
+	{"section", obj_plan9_section, 0},
+	{"p2align", s_align_ptwo, 0},
+
   {"line", obj_plan9_line, 0},	/* source code line number */
   {"ln", obj_plan9_line, 0},	/* coff line number that we use anyway */
 
@@ -58,11 +296,88 @@ const pseudo_typeS aout_pseudo_table[] =
 
   {"optim", s_ignore, 0},	/* For sun386i cc (?) */
 
+  /* ELF/GNU as pseudos that may appear in compiler-generated .s.
+     For Plan 9 a.out we either ignore them or map to existing handlers.  */
+  {"local", s_ignore, 0},    /* e.g. .local sym  (ELF visibility hint) */
+  {"comm", obj_plan9_comm, 0},       /* e.g. .comm sym, size, align */
+  {"lcomm", s_lcomm, 0},     /* sometimes emitted by toolchains */
+
   /* other stuff */
   {"ABORT", s_abort, 0},
 
   {NULL, NULL, 0}		/* end sentinel */
 };				/* aout_pseudo_table */
+
+
+
+/* Minimal .section handler for Plan 9 a.out backend.
+   We map most gcc/elf section names into {.text,.data,.bss}.  */
+
+static void
+obj_plan9_section (int ignore)
+{
+  char *name;
+  segT sec;
+
+  (void) ignore;
+
+  while (ISSPACE (*input_line_pointer))
+    input_line_pointer++;
+
+  if (*input_line_pointer == '"')
+    {
+      int len;
+      name = demand_copy_C_string (&len);
+      /* name now points to newly allocated NUL-terminated string. */
+      if (strncmp (name, ".text", 5) == 0)
+        sec = subseg_new (".text", 0);
+      else if (strncmp (name, ".data", 5) == 0
+            || strncmp (name, ".rodata", 7) == 0)
+        sec = subseg_new (".data", 0);
+      else if (strncmp (name, ".bss", 4) == 0)
+        sec = subseg_new (".bss", 0);
+      else
+        sec = subseg_new (".text", 0);
+
+      subseg_set (sec, 0);
+      free (name);
+
+      ignore_rest_of_line ();
+      return;
+    }
+  else
+    {
+      char *start = input_line_pointer;
+      char *p = start;
+      char save;
+
+      while (*p && *p != ',' && !ISSPACE (*p))
+        p++;
+
+      save = *p;
+      *p = 0;
+      name = start;
+
+      if (strncmp (name, ".text", 5) == 0)
+        sec = subseg_new (".text", 0);
+      else if (strncmp (name, ".data", 5) == 0
+            || strncmp (name, ".rodata", 7) == 0)
+        sec = subseg_new (".data", 0);
+      else if (strncmp (name, ".bss", 4) == 0)
+        sec = subseg_new (".bss", 0);
+      else
+        sec = subseg_new (".text", 0);
+
+      *p = save;
+      input_line_pointer = p;
+
+      subseg_set (sec, 0);
+      ignore_rest_of_line ();
+      return;
+    }
+}
+
+
 
 void
 obj_plan9_frob_symbol (sym, punt)
@@ -168,6 +483,9 @@ obj_plan9_frob_file ()
   /* Relocation processing may require knowing the VMAs of the sections.
      Since writing to a section will cause the BFD back end to compute the
      VMAs, fake it out here....  */
+#ifdef DEBUG_PLAN9
+	fprintf(stderr, "DBG plan9: obj_plan9_frob_file called\n");
+#endif
   bfd_byte b = 0;
   bfd_boolean x = TRUE;
 
@@ -362,7 +680,7 @@ const struct format_ops plan9_format_ops =
   obj_plan9_frob_symbol,
   obj_plan9_frob_file,
   0,	/* frob_file_before_adjust */
-  0,	/* frob_file_after_relocs */
+  obj_plan9_frob_file_after_relocs, /* patch2 insert hook Was:  0,	/ * frob_file_after_relocs * / */
   0,	/* s_get_size */
   0,	/* s_set_size */
   0,	/* s_get_align */

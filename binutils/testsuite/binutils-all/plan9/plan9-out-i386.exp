@@ -1,0 +1,733 @@
+# Test suite for Plan 9 i386 object file (.8 format) BFD backend.
+# Copyright (C) 2024 Free Software Foundation, Inc.
+#
+# This file is part of the GNU Binutils.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# Only run these tests for an i386 plan9 target.
+if { ![istarget i*86-*-plan9*] } {
+    return
+}
+
+set testdir "$srcdir/$subdir"
+set fixture "$testdir/callmain.8"
+
+# Test 1: objdump -f recognizes the file format.
+send_log "Testing: objdump -f on callmain.8\n"
+set got [binutils_run $OBJDUMP "-f $fixture"]
+
+if { [regexp "plan9-out-i386" $got] } {
+    pass "objdump -f recognizes plan9-out-i386 format"
+} else {
+    fail "objdump -f does not recognize plan9-out-i386 format"
+    send_log "Output was: $got\n"
+}
+
+# Test 2: nm works and finds at least one symbol.
+send_log "Testing: nm on callmain.8\n"
+set got [binutils_run $NM "$fixture"]
+
+if { [string length $got] > 0 && ![regexp "no symbols" $got]
+     && ![regexp "File format not recognized" $got] } {
+    pass "nm works on plan9-out-i386 object file"
+} else {
+    fail "nm failed on plan9-out-i386 object file"
+    send_log "Output was: $got\n"
+}
+
+# Test 3: nm finds specific symbols (_callmain is the real 9front libc entry).
+if { [regexp "_callmain" $got] } {
+    pass "nm finds '_callmain' symbol in callmain.8"
+} else {
+    fail "nm does not find '_callmain' symbol in callmain.8"
+    send_log "Output was: $got\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests for AGLOBL BSS sizing (regression for BSS symbol aliasing bug).
+#
+# argv0.8 is a BSS-only object containing two AGLOBL declarations:
+#   AGLOBL argv0, $4   (argv0 at BSS offset 0, size 4)
+#   AGLOBL _tos,  $4   (_tos  at BSS offset 4, size 4)
+#
+# Before the fix, both symbols had value 0 (the early-return path in
+# p9obj_encode_file skipped BSS layout for files with no ATEXT records).
+# After the fix they must have distinct, non-overlapping addresses.
+# -----------------------------------------------------------------------
+set bss_fixture "$testdir/argv0.8"
+
+# Test 4: objdump -f recognizes argv0.8 as plan9-out-i386.
+send_log "Testing: objdump -f on argv0.8\n"
+set got4 [binutils_run $OBJDUMP "-f $bss_fixture"]
+
+if { [regexp "plan9-out-i386" $got4] } {
+    pass "objdump -f recognizes argv0.8 as plan9-out-i386"
+} else {
+    fail "objdump -f does not recognize argv0.8 as plan9-out-i386"
+    send_log "Output was: $got4\n"
+}
+
+# Test 5: nm finds both argv0 and _tos in argv0.8.
+send_log "Testing: nm on argv0.8\n"
+set gotnm [binutils_run $NM "$bss_fixture"]
+
+if { [regexp "argv0" $gotnm] && [regexp "_tos" $gotnm] } {
+    pass "nm finds 'argv0' and '_tos' in argv0.8"
+} else {
+    fail "nm does not find expected BSS symbols in argv0.8"
+    send_log "Output was: $gotnm\n"
+}
+
+# Test 6: argv0 and _tos must have DIFFERENT addresses (non-overlapping BSS).
+# nm output is "VALUE TYPE NAME"; parse the hex values for both symbols.
+send_log "Testing: BSS symbols argv0 and _tos have distinct addresses\n"
+set addr_argv0 -1
+set addr_tos   -1
+
+foreach line [split $gotnm "\n"] {
+    if { [regexp {^([0-9a-fA-F]+)\s+[Bb]\s+argv0\s*$} $line -> v] } {
+        scan $v %x addr_argv0
+    }
+    if { [regexp {^([0-9a-fA-F]+)\s+[Bb]\s+_tos\s*$} $line -> v] } {
+        scan $v %x addr_tos
+    }
+}
+
+if { $addr_argv0 >= 0 && $addr_tos >= 0 && $addr_argv0 != $addr_tos } {
+    pass "BSS symbols argv0 and _tos have distinct non-overlapping addresses"
+} else {
+    fail "BSS symbols argv0 and _tos overlap (addr_argv0=$addr_argv0, addr_tos=$addr_tos)"
+    send_log "nm output was:\n$gotnm\n"
+}
+
+# Test 7: the BSS section of argv0.8 must have non-zero size (>= 8 bytes).
+send_log "Testing: objdump -h shows non-zero .bss size in argv0.8\n"
+set gotsec [binutils_run $OBJDUMP "-h $bss_fixture"]
+
+# The .bss line in objdump -h contains the size as the second hex field.
+# Example: "  2 .bss          00000008  00000000  00000000  00000034  2**2"
+if { [regexp {\.bss\s+([0-9a-fA-F]+)} $gotsec -> bsssz]
+     && [scan $bsssz %x bssval] == 1 && $bssval >= 8 } {
+    pass "argv0.8 .bss section has correct non-zero size"
+} else {
+    fail "argv0.8 .bss section has unexpected size"
+    send_log "objdump -h output was:\n$gotsec\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests for native Plan 9 i386 executable (pw).
+#
+# pw is a small native 9front/Plan 9 i386 executable produced by 8l.
+# Its header has magic 0x1eb (big-endian), a_text=0xda, a_data=0x24,
+# a_syms=0x3ee (1006 bytes of Plan 9-format symbols).  The Plan 9
+# symbol format uses (4-byte big-endian value, 1-byte type, name\0)
+# entries, not a.out nlist.  Bugs fixed:
+#   - section layout: data filepos was off by EXEC_BYTES_SIZE (32 bytes)
+#   - slurp: Plan 9 native symbols were wrongly decoded as a.out nlist,
+#     causing malloc() corruption for a_syms not divisible by 12
+# -----------------------------------------------------------------------
+set pw_fixture "$testdir/pw"
+
+# Test 8: objdump -f recognises pw as plan9-i386.
+send_log "Testing: objdump -f on pw\n"
+set got12 [binutils_run $OBJDUMP "-f $pw_fixture"]
+
+if { [regexp "plan9-i386" $got12] } {
+    pass "objdump -f recognizes pw as plan9-i386"
+} else {
+    fail "objdump -f does not recognize pw as plan9-i386"
+    send_log "Output was: $got12\n"
+}
+
+# Test 9: objdump -d pw must not say "wrong format" (detection succeeds
+# and the text section is read and disassembled without crash).
+send_log "Testing: objdump -d on pw does not print 'wrong format'\n"
+set got13 [binutils_run $OBJDUMP "-d $pw_fixture"]
+
+if { ![regexp -nocase "wrong format" $got13] && [string length $got13] > 0 } {
+    pass "objdump -d on pw succeeds (no 'wrong format')"
+} else {
+    fail "objdump -d on pw printed 'wrong format' or produced no output"
+    send_log "Output was: $got13\n"
+}
+
+# Test 10: nm pw must not crash and must list at least one known symbol.
+# The Plan 9 symbol table in pw contains 'etext' (a text-segment symbol).
+send_log "Testing: nm on pw finds 'etext' symbol\n"
+set got14 [binutils_run $NM "$pw_fixture"]
+
+if { [regexp "etext" $got14] } {
+    pass "nm on pw finds 'etext' (Plan 9 native symbol table parsed correctly)"
+} else {
+    fail "nm on pw did not find 'etext' -- Plan 9 native symtab may be broken"
+    send_log "Output was: $got14\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests for the real 9front libc callmain.8 (606 bytes from 9front libc.a).
+#
+# The real 9front callmain.8 uses the Plan 9 ATEXT convention: the stack
+# frame (auto) size is stored in the ATEXT to.offset field (0x50 = 80)
+# rather than as a separate ADJSP instruction.  The BFD backend must
+# synthesise ADJSP from the ATEXT auto-size and then adjust all D_AUTO
+# and D_PARAM addresses by +auto_size, matching 9front 8l span() semantics.
+#
+# Before the fix: first instruction was 8d 84 24 c0 ff ff ff
+#   (lea -0x40(%esp),%eax — no stack allocation, wrong offset).
+# After the fix:
+#   0: 83 ec 50  sub $0x50,%esp          (ADJSP from ATEXT auto-size)
+#   3: 8d 44 24 10  lea 0x10(%esp),%eax  (D_AUTO -0x40 + 0x50 = +0x10)
+# -----------------------------------------------------------------------
+
+# Test 11: disassembly of callmain.8 contains sub $0x50,%esp (83 ec 50).
+# The ATEXT auto-size must be converted to ADJSP -> SUBL to allocate the frame.
+send_log "Testing: callmain.8 _callmain prologue contains sub \$0x50,%esp\n"
+set got15 [binutils_run $OBJDUMP "-d $fixture"]
+
+if { [regexp {83\s+ec\s+50} $got15] } {
+    pass "callmain.8 contains sub \$0x50,%esp (ATEXT auto-size synthesised correctly)"
+} else {
+    fail "callmain.8 missing sub \$0x50,%esp -- ATEXT auto-size not synthesised"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 12: sub must be the FIRST instruction of _callmain (at offset 0).
+send_log "Testing: callmain.8 _callmain first instruction is sub (not lea)\n"
+if { [regexp {0:\s+83\s+ec\s+50} $got15] } {
+    pass "callmain.8 _callmain first instruction is sub \$0x50,%esp (not lea)"
+} else {
+    fail "callmain.8 _callmain first instruction is not sub \$0x50,%esp"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 13: D_AUTO offset adjustment: lea must use 0x10(%esp) not -0x40(%esp).
+# D_AUTO offset -0x40 adjusted by auto_size 0x50 must produce +0x10.
+# Bytes: 8d 44 24 10 = lea 0x10(%esp),%eax  (correct, with 8-bit displacement).
+send_log "Testing: callmain.8 D_AUTO offset adjusted (lea 0x10(%esp), not -0x40(%esp))\n"
+if { [regexp {8d\s+44\s+24\s+10} $got15] } {
+    pass "callmain.8 D_AUTO -0x40 + auto_size 0x50 = 0x10 (correct lea 0x10(%esp))"
+} else {
+    fail "callmain.8 D_AUTO offset not adjusted -- lea 0x10(%esp) not found"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 14: disassembly must NOT contain the wrong lea with -0x40 offset.
+# 8d 84 24 c0 ff ff ff = lea -0x40(%esp),%eax (unadjusted, wrong).
+send_log "Testing: callmain.8 does not contain unadjusted lea -0x40(%esp)\n"
+if { ![regexp {8d\s+84\s+24\s+c0\s+ff\s+ff\s+ff} $got15] } {
+    pass "callmain.8 does not contain lea -0x40(%esp) (D_AUTO correctly adjusted)"
+} else {
+    fail "callmain.8 contains lea -0x40(%esp) -- D_AUTO offset was NOT adjusted"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests for correct D_PARAM adjustment (fn_ptr at 0x54, not 0x50).
+#
+# In the x86 calling convention, after CALL pushes the return address,
+# the first function parameter (D_PARAM 0) is at old_SP+4, not old_SP.
+# After sub $0x50,%esp, D_PARAM 0 must map to new_SP+0x54, not 0x50.
+#
+# The bug: D_PARAM offsets were adjusted by +auto_size only, placing the
+# function pointer at [ESP+0x50] = the return-address slot (== 0 in the
+# 9front startup JMP convention), causing _callmain to jump to pc=0.
+#
+# The fix: D_PARAM offsets are adjusted by +auto_size+4 to account for
+# the 4-byte return address between old_SP and the first parameter.
+#
+# Expected: 8b 44 24 54  mov 0x54(%esp),%eax  (D_PARAM 0 fn_ptr at SP+0x54)
+#           ff d0         call *%eax
+# -----------------------------------------------------------------------
+
+# Test 15: D_PARAM 0 (fn_ptr) must be at 0x54(%esp) after adjustment.
+# Bytes: 8b 44 24 54 = mov 0x54(%esp),%eax  (D_PARAM 0 + 0x50 + 4 = 0x54).
+send_log "Testing: callmain.8 D_PARAM 0 fn_ptr adjusted to 0x54(%esp)\n"
+if { [regexp {8b\s+44\s+24\s+54} $got15] } {
+    pass "callmain.8 D_PARAM 0 fn_ptr at 0x54(%esp) (D_PARAM 0 + auto_size + 4)"
+} else {
+    fail "callmain.8 D_PARAM 0 fn_ptr not at 0x54(%esp) -- D_PARAM offset wrong"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 16: the instruction at 0x54(%esp) must be immediately followed by
+# call *%eax (ff d0), confirming it is the indirect call through fn_ptr.
+# Bytes: 8b 44 24 54 ... ff d0 (two consecutive instructions).
+send_log "Testing: callmain.8 mov 0x54(%esp),%eax immediately precedes call *%eax\n"
+if { [regexp {8b\s+44\s+24\s+54[^\n]*\n[^\n]*ff\s+d0} $got15] } {
+    pass "callmain.8 fn_ptr load (8b 44 24 54) immediately precedes call *%eax (ff d0)"
+} else {
+    fail "callmain.8 fn_ptr load is not immediately before call *%eax"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 17: the wrong slot (0x50, == return address) must NOT be used.
+# 8b 44 24 50 = mov 0x50(%esp),%eax would read the return address (== 0),
+# causing pc=0x0 crash on 9front when the startup JMPs (not CALLs) _callmain.
+send_log "Testing: callmain.8 does not contain mov 0x50(%esp),%eax (wrong slot)\n"
+if { ![regexp {8b\s+44\s+24\s+50} $got15] } {
+    pass "callmain.8 does not contain mov 0x50(%esp),%eax (return-addr slot not used)"
+} else {
+    fail "callmain.8 contains mov 0x50(%esp),%eax -- fn_ptr still reads return addr slot"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests for argc/argv argument slots in _callmain.
+#
+# In the 9front _callmain ABI, after sub $0x50,%esp the stack slots are:
+#   new_SP+0x10 = &tosenv (D_AUTO -0x40 + 0x50)
+#   new_SP+0x54 = fn_ptr  (D_PARAM 0 + 0x50 + 4)
+#   new_SP+0x58 = argc    (D_PARAM 4 + 0x50 + 4)
+#   new_SP+0x5c = &argv   (D_PARAM 8 + 0x50 + 4)
+#
+# The native 9front reference binary pw contains (at offsets 0x17, 0x1e):
+#   17: 8b 44 24 58  mov 0x58(%esp),%eax   <- argc
+#   1e: 8d 44 24 5c  lea 0x5c(%esp),%eax   <- &argv[0]
+#
+# These slots must match the native 9front binary exactly.  Any deviation
+# causes _callmain to pass wrong argc/argv to the user program.
+# -----------------------------------------------------------------------
+
+# Test 18: argc must be loaded from 0x58(%esp).
+# Bytes: 8b 44 24 58 = mov 0x58(%esp),%eax
+# D_PARAM 4 (argc) + auto_size 0x50 + 4 (return addr) = 0x58 ✓
+send_log "Testing: callmain.8 argc loaded from 0x58(%esp)\n"
+if { [regexp {8b\s+44\s+24\s+58} $got15] } {
+    pass "callmain.8 argc loaded from 0x58(%esp) (D_PARAM 4 + auto_size 0x50 + 4)"
+} else {
+    fail "callmain.8 argc NOT loaded from 0x58(%esp) -- D_PARAM offset wrong"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 19: argv address must be computed as lea 0x5c(%esp),%eax.
+# Bytes: 8d 44 24 5c = lea 0x5c(%esp),%eax
+# D_PARAM 8 (argv) + auto_size 0x50 + 4 (return addr) = 0x5c ✓
+send_log "Testing: callmain.8 argv address computed from 0x5c(%esp)\n"
+if { [regexp {8d\s+44\s+24\s+5c} $got15] } {
+    pass "callmain.8 argv address computed from 0x5c(%esp) (D_PARAM 8 + auto_size 0x50 + 4)"
+} else {
+    fail "callmain.8 argv address NOT at 0x5c(%esp) -- D_PARAM offset wrong"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 20: Verify the complete _callmain sequence matches native 9front pw.
+# All five key stack-relative accesses must appear in the disassembly:
+#   sub $0x50,%esp          (frame alloc from ATEXT auto-size)
+#   lea 0x10(%esp),%eax     (tosenv = D_AUTO -0x40 + 0x50)
+#   mov 0x58(%esp),%eax     (argc = D_PARAM 4 + 0x50 + 4)
+#   lea 0x5c(%esp),%eax     (argv = D_PARAM 8 + 0x50 + 4)
+#   mov 0x54(%esp),%eax     (fn_ptr = D_PARAM 0 + 0x50 + 4)
+#   call *%eax              (indirect call through fn_ptr)
+# This mirrors the native 9front pw _callmain byte-for-byte for these slots.
+send_log "Testing: callmain.8 complete _callmain sequence matches native 9front pw\n"
+set seq_ok 1
+foreach {pat desc} {
+    {83\s+ec\s+50}       "sub \$0x50,%esp (frame alloc)"
+    {8d\s+44\s+24\s+10}  "lea 0x10(%esp),%eax (tosenv D_AUTO)"
+    {8b\s+44\s+24\s+58}  "mov 0x58(%esp),%eax (argc D_PARAM 4)"
+    {8d\s+44\s+24\s+5c}  "lea 0x5c(%esp),%eax (argv D_PARAM 8)"
+    {8b\s+44\s+24\s+54}  "mov 0x54(%esp),%eax (fn_ptr D_PARAM 0)"
+    {ff\s+d0}             "call *%eax"
+} {
+    if { ![regexp $pat $got15] } {
+        send_log "  MISSING: $desc\n"
+        set seq_ok 0
+    }
+}
+if { $seq_ok } {
+    pass "callmain.8 _callmain stack-frame sequence matches native 9front pw"
+} else {
+    fail "callmain.8 _callmain stack-frame sequence does not match native 9front pw"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests for OMAGIC (relocatable) plan9-i386 object files.
+#
+# When $bu-as assembles Plan 9 i386 assembly, it produces an OMAGIC (0x107)
+# relocatable object.  In OMAGIC format the text section starts at VMA 0.
+# Because a_entry=0 is within the text segment [0, text_size), the generic
+# some_aout_object_p heuristic incorrectly sets EXEC_P.
+#
+# This caused ld to treat the input object as already-placed (pre-linked),
+# so relocations were skipped and user symbols like 'main' ended up at wrong
+# addresses (e.g. 0x20f8 in BSS instead of inside .text at 0x1020+offset),
+# making indirect calls crash ("page fault 0x20f8 no instruction").
+#
+# After the fix: EXEC_P is cleared for any OMAGIC plan9-i386 object in
+# plan9_i386_object_p, so the linker relocates it normally.
+#
+# The VMA fixup block in write_object_contents is also guarded by EXEC_P:
+# it only applies to executables, not to relocatable objects, so text VMA
+# stays at 0 for .o files.
+#
+# Fixture: reloc_test.o is a hand-crafted minimal OMAGIC plan9-i386 object
+# with one text symbol "main" at VMA 0.  It exercises the EXEC_P reader fix.
+# -----------------------------------------------------------------------
+set reloc_fixture "$testdir/reloc_test.o"
+
+# Test 21: objdump -f on reloc_test.o must recognize plan9-i386 format.
+send_log "Testing: objdump -f on reloc_test.o recognizes format\n"
+set got_reloc [binutils_run $OBJDUMP "-f $reloc_fixture"]
+
+if { [regexp "plan9-i386" $got_reloc] } {
+    pass "objdump -f recognizes reloc_test.o as plan9-i386"
+} else {
+    fail "objdump -f does not recognize reloc_test.o as plan9-i386"
+    send_log "Output was: $got_reloc\n"
+}
+
+# Test 22: reloc_test.o must NOT have EXEC_P set.
+# OMAGIC (relocatable) objects must not be treated as pre-linked executables.
+# Before the fix, EXEC_P was set because a_entry=0 is within text [0, size),
+# causing ld to skip relocations and place user symbols at wrong addresses.
+send_log "Testing: reloc_test.o does not have EXEC_P (it is a relocatable object)\n"
+if { ![regexp {EXEC_P} $got_reloc] } {
+    pass "reloc_test.o does not have EXEC_P (OMAGIC relocatable correctly identified)"
+} else {
+    fail "reloc_test.o incorrectly has EXEC_P set -- linker will skip relocations"
+    send_log "Output was: $got_reloc\n"
+}
+
+# Test 23: nm on reloc_test.o must find the 'main' symbol in .text.
+send_log "Testing: nm on reloc_test.o finds 'main' in .text\n"
+set got_nm_reloc [binutils_run $NM "$reloc_fixture"]
+
+if { [regexp {[Tt]\s+main} $got_nm_reloc] } {
+    pass "nm finds 'main' as a text symbol in reloc_test.o"
+} else {
+    fail "nm did not find 'main' as a text symbol in reloc_test.o"
+    send_log "nm output was: $got_nm_reloc\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests for CALL/JMP to external symbol encoding (direct E8/E9 rel32).
+#
+# In Plan 9 assembler, "CALL sym(SB)" is a direct near-call (E8 rel32).
+# Before the fix, p9_oclass() returned Ym for P9D_EXTERN/P9D_STATIC, so
+# the instruction selector picked Zo_m (FF /2 = indirect call through
+# absolute memory address), generating "call *0x10cd" instead of a direct
+# "call <sym>".  The CPU then dereferenced address 0x10cd as a function
+# pointer, reading the first 4 bytes of pwrite stub code (0x33b8...) and
+# jumping there, causing "page fault 0x33b8".
+#
+# After the fix, p9_doasm() intercepts CALL/JMP with P9D_EXTERN/P9D_STATIC
+# target before the Ym match and emits E8/E9 rel32 directly.
+#
+# Fixture: main9.8 contains a CALL to "_callmain" (an external symbol).
+# The disassembly must use direct E8 (call) not FF 15 (call *mem).
+# -----------------------------------------------------------------------
+set main9_fixture "$testdir/main9.8"
+set got_main9 [binutils_run $OBJDUMP "-d $main9_fixture"]
+
+# Test 24: disassembly of main9.8 must NOT contain "ff 15" (CALL *abs32).
+# "ff 15 xx xx xx xx" = call *0xXXXXXX (indirect through absolute memory).
+# This is the wrong encoding for CALL to external symbol in Plan 9.
+# Before the fix: CALL _callmain(SB) generated FF 15 (indirect), not E8.
+send_log "Testing: main9.8 does not contain indirect call-through-memory (ff 15)\n"
+if { ![regexp {ff\s*15} $got_main9] } {
+    pass "main9.8 CALL to external symbol uses direct E8, not indirect FF 15"
+} else {
+    fail "main9.8 contains 'ff 15' (indirect call-through-memory) -- CALL encoding wrong"
+    send_log "objdump -d output was:\n$got_main9\n"
+}
+
+# Test 25: disassembly of main9.8 must contain "e8" (direct CALL rel32).
+# main9.8 contains a CALL to _callmain (external symbol).
+# After the fix, this must encode as E8 rel32 (direct near-call).
+send_log "Testing: main9.8 CALL to _callmain uses direct E8 rel32\n"
+if { [regexp {\se8\s} $got_main9] } {
+    pass "main9.8 CALL to external symbol encoded as direct E8 rel32"
+} else {
+    fail "main9.8 does not contain direct E8 call -- external CALL not encoded as E8"
+    send_log "objdump -d output was:\n$got_main9\n"
+}
+
+# Test 26: callmain.8 must also not contain any ff 15 (all external CALLs direct).
+# callmain.8 may call external libc symbols; none should use indirect FF 15.
+send_log "Testing: callmain.8 does not contain indirect call-through-memory (ff 15)\n"
+if { ![regexp {ff\s*15} $got15] } {
+    pass "callmain.8 has no indirect call-through-memory encoding (ff 15 absent)"
+} else {
+    fail "callmain.8 contains 'ff 15' -- external CALL incorrectly encoded as indirect"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests 27-29: PC-relative CALL relocation addend correctness.
+#
+# For an x86 CALL rel32 ("E8 disp32"), the CPU computes the call target as:
+#   target = (field_address + 4) + disp32
+# The BFD linker with pcrel_offset=TRUE (our PC32 howto) stores:
+#   disp32 = sym_VMA + addend - (sec_VMA + output_offset + r->address)
+#           = sym_VMA + addend - field_VMA
+# CPU target = field_VMA + 4 + disp32 = sym_VMA + addend + 4
+# To land at sym_VMA we need addend = -4.
+#
+# Without the fix (addend=0, pcrel_offset=FALSE), the call landed at
+# sym_VMA + r->address + 4 (off by the field's section offset), causing a
+# fault at the wrong address.  With addend=-4 and pcrel_offset=TRUE, the
+# call lands exactly at sym_VMA.
+#
+# Verify via "objdump -r": the PC32 reloc for the external CALL in main9.8
+# must have an addend of -4, shown as "-0x4" in the objdump output.
+# -----------------------------------------------------------------------
+send_log "Testing: objdump -r on main9.8 shows a PC32 relocation for _callmain\n"
+set got_reloc [binutils_run $OBJDUMP "-r $main9_fixture"]
+
+# Test 27: objdump -r output must contain a PC32 (pc-relative) relocation.
+if { [regexp -nocase {PC32|pc32|pcrel|R_386_PC32} $got_reloc] } {
+    pass "main9.8 has a PC32 relocation for external CALL"
+} else {
+    fail "main9.8 missing PC32 relocation for external CALL"
+    send_log "objdump -r output was:\n$got_reloc\n"
+}
+
+# Test 28: The PC32 reloc addend must be -4.
+# An addend of 0 would cause the call to land 4 bytes into the target.
+# objdump displays -4 as "-0x4", "-4", "0xfffffffc" (32-bit), or
+# "0xfffffffffffffffc" (64-bit host); all contain the pattern "fffffffc".
+if { [regexp -nocase {-0x4|-4\b|fffffffc} $got_reloc] } {
+    pass "main9.8 PC32 reloc has correct addend -4 for E8 rel32 CALL"
+} else {
+    fail "main9.8 PC32 reloc missing addend -4 -- CALL would land 4 bytes past target"
+    send_log "objdump -r output was:\n$got_reloc\n"
+}
+
+# Test 29: The disassembly must NOT contain the bytes "ff e8" as a 2-byte
+# sequence in the .text disassembly.  "ff e8" decodes as LJMPF *%eax which
+# is an invalid far-jump instruction -- it indicates a missing instruction
+# boundary (e.g., the last byte 0xff of a "push $-1" followed by the 0xe8
+# CALL opcode is being mis-decoded as a single instruction).
+# This test guards against the specific mis-encoding reported where
+# "ff e8 5b 00 00 00" appeared at the write()->pwrite() call site.
+send_log "Testing: main9.8 disassembly does not contain 'ff e8' (wrong CALL encoding)\n"
+if { ![regexp {ff\s*e8} $got_main9] } {
+    pass "main9.8 disassembly does not contain 'ff e8' (no LJMPF *%%eax)"
+} else {
+    fail "main9.8 disassembly contains 'ff e8' -- possible wrong CALL encoding"
+    send_log "objdump -d output was:\n$got_main9\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests 30-35: PC32 relocation precision and call-target correctness.
+#
+# Background: The symptom in t04.exe was that the CALL inside write() (from
+# write.8) called address 0x10f5 (inside main) instead of pwrite at 0x10ca.
+# Root cause was pcrel_offset=FALSE in the PC32 howto, which produced:
+#   disp32 = sym_VMA - 4 - section_VMA
+#   CPU target = section_VMA + r->address + 4 + disp32 = sym_VMA + r->address
+# With r->address=0x2b, target = pwrite_VMA + 0x2b = 0x10f5 (wrong).
+#
+# Fix: pcrel_offset=TRUE with addend=-4:
+#   disp32 = sym_VMA - 4 - section_VMA - r->address
+#   CPU target = section_VMA + r->address + 4 + disp32 = sym_VMA ✓
+#
+# callmain.8 has CALL exits (direct call to external symbol) at text offset
+# 0x34 (E8 opcode) with disp32 field at offset 0x35.  This mirrors the
+# write() → pwrite() scenario exactly.
+#
+# Tests below verify that:
+#  - E8 is at the CALL site (direct-call opcode)
+#  - PC32 reloc is at offset 0x35 (E8+1 = disp32 field, not the opcode)
+#  - Addend is -4
+#  - No ff 15 (indirect call through memory) or ff e8 wrong byte sequence
+#
+# Together these prove the CPU will compute: target = sym_VMA ✓
+# -----------------------------------------------------------------------
+send_log "Testing: callmain.8 CALL exits uses direct E8 at offset 0x34\n"
+# $fixture is set to callmain.8 at the top of this file.
+# got15 already holds the callmain.8 disassembly from test 14; reuse it.
+set got_callmain_d $got15
+set got_callmain_r [binutils_run $OBJDUMP "-r $fixture"]
+
+# Test 30: callmain.8 disassembly shows E8 at offset 0x34 (CALL exits direct).
+# The disassembly line must include both "34" (the offset) and "e8" (the opcode).
+if { [regexp {34:.*e8} $got_callmain_d] } {
+    pass "callmain.8 CALL exits encoded as direct E8 at offset 0x34"
+} else {
+    fail "callmain.8 missing direct E8 at offset 0x34 for CALL exits"
+    send_log "objdump -d output was:\n$got_callmain_d\n"
+}
+
+# Test 31: callmain.8 PC32 reloc is at offset 0x35 (disp32 field = E8+1).
+# This confirms that the reloc points to the 4-byte displacement field,
+# NOT to the E8 opcode byte -- the critical requirement for correct linking.
+# With pcrel_offset=TRUE the formula uses r->address to adjust; if r->address
+# pointed to E8 (0x34) instead of the field (0x35), the result would be wrong.
+if { [regexp {00000035.*PC32} $got_callmain_r] } {
+    pass "callmain.8 PC32 reloc at offset 0x35 (disp32 field position)"
+} else {
+    fail "callmain.8 PC32 reloc not at expected offset 0x35"
+    send_log "objdump -r output was:\n$got_callmain_r\n"
+}
+
+# Test 32: callmain.8 PC32 reloc addend is -4.
+# With pcrel_offset=TRUE and addend=-4:
+#   CPU target = sym_VMA + addend + 4 = sym_VMA ✓
+# Without addend=-4 (e.g., addend=0): target = sym_VMA + 4 (wrong).
+if { [regexp -nocase {-0x4|-4\b|fffffffc} $got_callmain_r] } {
+    pass "callmain.8 PC32 reloc has correct addend -4"
+} else {
+    fail "callmain.8 PC32 reloc missing addend -4 -- CALL target would be sym+4"
+    send_log "objdump -r output was:\n$got_callmain_r\n"
+}
+
+# Test 33: callmain.8 PC32 reloc refers to 'exits' (the external callee symbol).
+if { [regexp {exits} $got_callmain_r] } {
+    pass "callmain.8 PC32 reloc targets external symbol 'exits'"
+} else {
+    fail "callmain.8 PC32 reloc does not reference 'exits'"
+    send_log "objdump -r output was:\n$got_callmain_r\n"
+}
+
+# Test 34: callmain.8 disassembly does NOT contain 'ff 15' (call *abs32).
+# This is the wrong indirect-through-memory encoding that caused the 9front
+# crash: the CPU would read 4 bytes at the callee's address as a pointer and
+# jump to garbage.  Fixed by emitting E8/E9 rel32 for P9D_EXTERN calls.
+if { ![regexp {ff\s*15} $got_callmain_d] } {
+    pass "callmain.8 has no indirect call-through-memory encoding (ff 15 absent)"
+} else {
+    fail "callmain.8 contains 'ff 15' -- external CALL incorrectly indirect"
+    send_log "objdump -d output was:\n$got_callmain_d\n"
+}
+
+# Test 35: callmain.8 disassembly does NOT contain 'ff e8'.
+# 'ff e8' is the wrong byte sequence that would appear if the instruction
+# boundary was off (e.g., PUSH $-1 followed by E8 CALL being mis-read as
+# a single far-jump instruction).
+if { ![regexp {ff\s*e8} $got_callmain_d] } {
+    pass "callmain.8 has no 'ff e8' encoding (no wrong instruction boundary)"
+} else {
+    fail "callmain.8 contains 'ff e8' -- possible wrong instruction boundary"
+    send_log "objdump -d output was:\n$got_callmain_d\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests 36-41: Conditional branch (JEQ/JCC) encoding in exits.8
+#
+# exits.8 is the real 9front exits() from libc/port/exits.c:
+#   TEXT exits+0(SB),$8         ; auto_size=8 → synthesised ADJSP
+#   MOVL _onexit+0(SB),CX       ; load atexit function pointer
+#   CMPL CX,$0                  ; is _onexit set?
+#   JEQ  skip                   ; D_BRANCH target = func-relative PC 5
+#   CALL* CX                    ; call _onexit() only when != NULL
+# skip:
+#   <arg setup for _exits>
+#   CALL _exits(SB)             ; call _exits(msg)
+#   ...
+#
+# Root cause of the JEQ bug: plan9-out-i386 resolved branch targets by
+# comparing progs_all[j].back (which stored a FILE-GLOBAL instruction
+# counter) against the D_BRANCH.offset value from the .8 file.
+# D_BRANCH.offset is a FUNCTION-RELATIVE index where ATEXT=0; using a
+# file-global counter caused the comparison to always fail, so
+# pcond_idx stayed -1 and the Zbr case emitted 0 bytes → JEQ dropped.
+#
+# Fix: reset global_plan9_pc=0 at each ATEXT so that progs[].back
+# stores function-relative indices matching D_BRANCH.offset values.
+#
+# Expected encoding (auto_size=8, ADJSP present):
+#   0: 83 ec 08             sub    $0x8,%esp       (synthesised ADJSP)
+#   3: 8b 0d XX XX XX XX   mov    _onexit,%ecx     (reloc)
+#   9: 83 f9 00             cmp    $0x0,%ecx
+#   c: 74 XX               je     skip             (skip CALL* CX)
+#   e: ff d1               call   *%ecx
+# skip:
+#  ...  e8 XX XX XX XX      call   _exits           (reloc)
+# -----------------------------------------------------------------------
+set exits_fixture "$testdir/exits.8"
+set got_exits_d [binutils_run $OBJDUMP "-d $exits_fixture"]
+
+send_log "Testing: exits.8 recognized as plan9-out-i386\n"
+# Test 36: exits.8 format is recognized.
+set got_exits_f [binutils_run $OBJDUMP "-f $exits_fixture"]
+if { [regexp "plan9-out-i386" $got_exits_f] } {
+    pass "exits.8 recognized as plan9-out-i386 format"
+} else {
+    fail "exits.8 not recognized as plan9-out-i386 format"
+    send_log "Output was: $got_exits_f\n"
+}
+
+send_log "Testing: exits.8 contains 'je' conditional branch\n"
+# Test 37: exits.8 disassembly must contain 'je' (conditional branch).
+# Without the fix, JEQ is silently dropped and only CMPL + CALL* CX appear
+# with no jump between them.  With the fix, 'je' appears between them.
+if { [regexp {j[et]} $got_exits_d] } {
+    pass "exits.8 disassembly contains 'je' conditional branch (JEQ encoded)"
+} else {
+    fail "exits.8 missing 'je' -- JEQ was silently dropped (branch resolution bug)"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+
+send_log "Testing: exits.8 contains 'ff d1' CALL* CX\n"
+# Test 38: exits.8 disassembly must contain 'ff d1' (indirect CALL via CX).
+# This is CALL* CX = ff d1; it must be present AND preceded by a 'je'.
+if { [regexp {ff\s*d1} $got_exits_d] } {
+    pass "exits.8 disassembly contains 'ff d1' (CALL* CX)"
+} else {
+    fail "exits.8 missing 'ff d1' -- CALL* CX not encoded correctly"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+
+send_log "Testing: exits.8 'je' appears at offset 9 before CALL* CX at offset b\n"
+# Test 39: The short JE opcode byte (0x74) must appear in the disassembly.
+# A long form (0f 84) would also be acceptable, but for exits (auto_size=0)
+# the displacement is small so the short form is expected.
+if { [regexp {74} $got_exits_d] || [regexp {0f\s*84} $got_exits_d] } {
+    pass "exits.8 JEQ short/long form opcode (74 or 0f 84) found in disassembly"
+} else {
+    fail "exits.8 missing JEQ opcode (74 / 0f 84) in raw bytes"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+
+send_log "Testing: exits.8 direct CALL _exits uses E8\n"
+# Test 40: exits.8 disassembly must contain 'e8' (direct CALL _exits).
+# The skip target is a direct CALL to _exits via E8 rel32.
+if { [regexp {e8} $got_exits_d] } {
+    pass "exits.8 CALL _exits encoded as direct E8"
+} else {
+    fail "exits.8 missing E8 -- CALL _exits not encoded as direct call"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+
+send_log "Testing: exits.8 has no indirect call-through-memory (ff 15)\n"
+# Test 41: exits.8 must NOT contain 'ff 15' (indirect call through abs32 memory).
+# This encoding would mean an external CALL was wrongly turned into an
+# indirect-through-memory call (the earlier Part I bug pattern).
+if { ![regexp {ff\s*15} $got_exits_d] } {
+    pass "exits.8 has no indirect call-through-memory (ff 15 absent)"
+} else {
+    fail "exits.8 contains 'ff 15' -- external CALL incorrectly indirect"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+
+send_log "Testing: exits.8 does not have CMP immediately followed by CALL* (no JCC between them)\n"
+# Test 42: exits.8 disassembly must NOT have the line for CMPL CX,$0 (83 f9 00)
+# immediately followed (on the very next disassembly line) by the CALL* CX line
+# (ff d1).  That adjacent-line adjacency is the exact symptom when JEQ is dropped:
+# CMPL then CALL* with no conditional branch in between.
+#
+# The pattern uses [^\n]* to match to the end of the cmp line, then \n, then
+# optional leading whitespace/address, then ff followed by whitespace and d1.
+# In the good case the "je" line sits between them so the pattern won't match.
+# In the broken case (JEQ silently dropped) the lines are directly adjacent.
+#
+# NOTE: \s*f9\s*00 between 83 and 00 allows for the space-separated hex dump
+# format that objdump uses (e.g. "83 f9 00").
+if { ![regexp {83\s+f9\s+00[^\n]*\n[^\n]*ff\s+d1} $got_exits_d] } {
+    pass "exits.8 no direct CMPL-then-CALL*CX (JCC correctly inserted)"
+} else {
+    fail "exits.8 broken: CMPL followed directly by CALL*CX (JEQ dropped -- D_BRANCH resolution bug)"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+

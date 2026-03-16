@@ -735,6 +735,7 @@ extern const bfd_target or32coff_big_vec;
 extern const bfd_target pc532machaout_vec;
 extern const bfd_target pc532netbsd_vec;
 extern const bfd_target plan9_i386_vec;
+extern const bfd_target plan9_out_i386_vec;
 extern const bfd_target pdp11_aout_vec;
 extern const bfd_target pef_vec;
 extern const bfd_target pef_xlib_vec;
@@ -1091,6 +1092,7 @@ static const bfd_target * const _bfd_target_vector[] = {
 	&pef_vec,
 	&pef_xlib_vec,
 	&plan9_i386_vec,
+	&plan9_out_i386_vec,
 #if 0
 	/* This has the same magic number as RS/6000.  */
 	&pmac_xcoff_vec,
