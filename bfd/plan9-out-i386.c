@@ -2250,10 +2250,12 @@ p9_read_zaddr (const unsigned char *p, bfd_size_type rem,
   if (t & P9OBJ_T_OFFSET)
     {
       if (c + 4 > rem) return -1;
-      a->offset = (long)((unsigned long)p[c]
-                       | ((unsigned long)p[c+1] << 8)
-                       | ((unsigned long)p[c+2] << 16)
-                       | ((unsigned long)p[c+3] << 24));
+      /* Sign-extend: on 64-bit hosts, casting via (int) ensures that
+         negative 32-bit values (e.g. D_AUTO -0x40) become negative longs. */
+      a->offset = (long)(int)((unsigned)p[c]
+                            | ((unsigned)p[c+1] << 8)
+                            | ((unsigned)p[c+2] << 16)
+                            | ((unsigned)p[c+3] << 24));
       c += 4;
     }
   if (t & P9OBJ_T_SYM)
@@ -2320,10 +2322,11 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
   int            ndatarecs = 0, datarecs_cap = 0;
 
   /* Current function context */
-  int cur_text_sym = -1;  /* index in int_syms of current ATEXT sym */
-  long text_pc     = 0;   /* cumulative PC across all functions      */
-  long data_total  = 0;   /* total .data bytes                       */
-  long bss_total   = 0;   /* total .bss bytes                        */
+  int cur_text_sym  = -1;  /* index in int_syms of current ATEXT sym */
+  long cur_auto_size = 0;  /* ATEXT to.offset frame size (for ADJSP synthesis) */
+  long text_pc      = 0;   /* cumulative PC across all functions      */
+  long data_total   = 0;   /* total .data bytes                       */
+  long bss_total    = 0;   /* total .bss bytes                        */
 
   /* Function-relative instruction counter used for D_BRANCH resolution.
      In Plan 9 .8 files, D_BRANCH target offsets are FUNCTION-RELATIVE
@@ -2493,6 +2496,11 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                 /* value will be set to text_pc during span */
               }
 
+            /* Track frame auto-size for D_AUTO/D_PARAM adjustment.
+               In Plan 9 .8 format, ATEXT to.offset is the frame size and
+               no explicit ADJSP instruction is emitted by 8c/8a.  */
+            cur_auto_size = to_a.offset;
+
             /* Add the ATEXT prog */
             if (nprogs >= progs_cap)
               {
@@ -2511,6 +2519,31 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
             /* Store function sym idx in a spare field for later */
             progs[nprogs].pc   = (cur_text_sym >= 0) ? cur_text_sym : -1;
             nprogs++;
+
+            /* Inject synthetic ADJSP from ATEXT auto-size.
+               8l synthesizes "ADJSP $frame_size" from ATEXT to.offset;
+               real libc .8 files have no explicit ADJSP instruction.  */
+            if (cur_auto_size > 0)
+              {
+                if (nprogs >= progs_cap)
+                  {
+                    progs_cap *= 2;
+                    p9_Prog *np = (p9_Prog *) realloc (progs,
+                                    progs_cap * sizeof(p9_Prog));
+                    if (!np) goto out_err;
+                    progs = np;
+                  }
+                memset (&progs[nprogs], 0, sizeof(p9_Prog));
+                progs[nprogs].as          = P9AS_ADJSP;
+                progs[nprogs].from.type   = P9D_CONST;  /* treat as immediate */
+                progs[nprogs].from.offset = cur_auto_size;
+                progs[nprogs].from.sym    = -1;
+                progs[nprogs].from.index  = P9D_NONE;
+                progs[nprogs].from.scale  = 1;
+                progs[nprogs].back        = -1;  /* synthetic: not in .8 stream */
+                progs[nprogs].pcond_idx   = -1;
+                nprogs++;
+              }
           }
         /* ---- AGLOBL: BSS declaration ---- */
         else if (opcode == P9OBJ_AGLOBL)
@@ -2611,6 +2644,22 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                                  rem - 6 - (bfd_size_type)fr,
                                  &to_a, h_symidx, 256);
             if (tr < 0) tr = 1;
+
+            /* Adjust D_AUTO and D_PARAM offsets for the synthesized ADJSP.
+               8l does this in span(): after ADJSP $frame, all D_AUTO
+               offsets are shifted +frame_size and D_PARAM by +frame_size+4
+               (x86 CALL pushes a return address before the first argument). */
+            if (cur_auto_size > 0)
+              {
+                if (from_a.type == P9D_AUTO)
+                  from_a.offset += cur_auto_size;
+                else if (from_a.type == P9D_PARAM)
+                  from_a.offset += cur_auto_size + 4;
+                if (to_a.type == P9D_AUTO)
+                  to_a.offset += cur_auto_size;
+                else if (to_a.type == P9D_PARAM)
+                  to_a.offset += cur_auto_size + 4;
+              }
 
             memset (&progs[nprogs], 0, sizeof(p9_Prog));
             progs[nprogs].as   = (short) opcode;
@@ -3160,6 +3209,17 @@ plan9_out_i386_object_p (bfd *abfd)
       /* Flag contents as present (size > 0 sections) */
       if (td2->text_size == 0) text_sec->flags &= ~SEC_HAS_CONTENTS;
       if (td2->data_size == 0) data_sec->flags &= ~SEC_HAS_CONTENTS;
+      /* Expose relocations so the linker will apply them */
+      if (td2->text_nrelocs > 0)
+        {
+          text_sec->flags |= SEC_RELOC;
+          text_sec->reloc_count = td2->text_nrelocs;
+        }
+      if (td2->data_nrelocs > 0)
+        {
+          data_sec->flags |= SEC_RELOC;
+          data_sec->reloc_count = td2->data_nrelocs;
+        }
     }
 
   return abfd->xvec;
@@ -3201,9 +3261,11 @@ static reloc_howto_type plan9_out_i386_howto_table[] =
   /* 0 – absolute 32-bit */
   HOWTO (0, 0, 2, 32, FALSE, 0, complain_overflow_dont,
          NULL, "ABS32", FALSE, 0, 0xffffffff, FALSE),
-  /* 1 – PC-relative 32-bit (call/jmp; addend = -4 already in instr) */
+  /* 1 – PC-relative 32-bit (call/jmp rel32; addend = -4, pcrel_offset = TRUE)
+     BFD formula: field = sym_VMA + addend - (sec_VMA + r->address)
+     CPU: (sec_VMA + r->address + 4) + field = sym_VMA + addend + 4 = sym_VMA */
   HOWTO (1, 0, 2, 32, TRUE,  0, complain_overflow_dont,
-         NULL, "PC32",  FALSE, 0, 0xffffffff, FALSE),
+         NULL, "PC32",  FALSE, 0, 0xffffffff, TRUE),
 };
 
 static reloc_howto_type *
@@ -3237,6 +3299,10 @@ plan9_out_i386_canonicalize_reloc (bfd *abfd, asection *sec,
   struct plan9_out_i386_reloc *recs = NULL;
   unsigned int n = 0, i;
 
+  /* Ensure symbol table (and sym_ptrs[]) is populated */
+  if (!p9obj_slurp_symtab (abfd))
+    return -1;
+
   if (strcmp (sec->name, ".text") == 0)
     { recs = td->text_relocs; n = td->text_nrelocs; }
   else if (strcmp (sec->name, ".data") == 0)
@@ -3257,7 +3323,11 @@ plan9_out_i386_canonicalize_reloc (bfd *abfd, asection *sec,
       else
         { relpp[i] = NULL; continue; }
       r->address     = (bfd_vma) recs[i].section_offset;
-      r->addend      = 0;
+      /* PC-relative call/jmp: the field already holds 0; BFD will compute
+         field = sym_VMA + addend - (sec_VMA + r->address)
+         CPU sees: (sec_VMA + r->address + 4) + field = sym_VMA + addend + 4
+         With addend = -4: CPU target = sym_VMA (correct). */
+      r->addend      = recs[i].pc_relative ? -4 : 0;
       r->howto       = &plan9_out_i386_howto_table[recs[i].pc_relative ? 1 : 0];
       relpp[i] = r;
     }
