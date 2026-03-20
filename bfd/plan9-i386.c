@@ -188,7 +188,191 @@ plan9_i386_slurp_armap (bfd *abfd)
 #undef N_SYMOFF
 #define N_SYMOFF(x)	( N_MAGIC(x) == QMAGIC ? N_DATOFF(x) + (x).a_data : N_DRELOFF(x) + (x).a_drsize )
 
+
+
+
+
+/* New hooks additions (till include of aout-target.h) */
+
+
+
+/* Start reloc hooks additions */
+
+static void
+MY (fixup_section_symbol_reloc) (bfd *abfd, arelent *rel)
+{
+  asymbol *sym;
+
+  if (rel == NULL || rel->howto == NULL || rel->sym_ptr_ptr == NULL)
+    return;
+  if (*(rel->sym_ptr_ptr) == NULL)
+    return;
+
+  sym = *(rel->sym_ptr_ptr);
+
+  /* Plan 9 i386: absolute relocs against local section symbols (.data/.bss)
+     come back from generic a.out decode with addend biased by section VMA.
+     Undo that bias here.  */
+  if (!rel->howto->pc_relative)
+    {
+      if (sym->section == obj_datasec (abfd))
+        rel->addend += obj_datasec (abfd)->vma;
+      else if (sym->section == obj_bsssec (abfd))
+        rel->addend += obj_bsssec (abfd)->vma;
+    }
+}
+
+static long
+MY (canonicalize_reloc) (bfd *abfd,
+                         asection *section,
+                         arelent **relptr,
+                         asymbol **symbols)
+{
+  long count;
+  long i;
+
+  count = NAME (aout, canonicalize_reloc) (abfd, section, relptr, symbols);
+  if (count <= 0)
+    return count;
+
+  for (i = 0; i < count; i++)
+    {
+      arelent *rel = relptr[i];
+
+      if (rel == NULL || rel->howto == NULL || rel->sym_ptr_ptr == NULL)
+        continue;
+      if (*(rel->sym_ptr_ptr) == NULL)
+        continue;
+
+#ifdef DEBUG_PLAN9
+      fprintf (stderr,
+               "DBG PLAN9 CANON_RELOC before: sec=%s idx=%ld addr=%#lx addend=%#lx sym=%s symflags=%#lx pc=%d size=%d\n",
+               section ? section->name : "(null)",
+               i,
+               (unsigned long) rel->address,
+               (unsigned long) rel->addend,
+               (*(rel->sym_ptr_ptr))->name ? (*(rel->sym_ptr_ptr))->name : "(null)",
+               (unsigned long) (*(rel->sym_ptr_ptr))->flags,
+               rel->howto ? (int) rel->howto->pc_relative : -1,
+               rel->howto ? (int) rel->howto->size : -1);
+#endif
+
+      MY (fixup_section_symbol_reloc) (abfd, rel);
+
+#ifdef DEBUG_PLAN9
+      fprintf (stderr,
+               "DBG PLAN9 CANON_RELOC after : sec=%s idx=%ld addr=%#lx addend=%#lx sym=%s\n",
+               section ? section->name : "(null)",
+               i,
+               (unsigned long) rel->address,
+               (unsigned long) rel->addend,
+               (*(rel->sym_ptr_ptr))->name ? (*(rel->sym_ptr_ptr))->name : "(null)");
+#endif
+    }
+
+  return count;
+}
+#define MY_canonicalize_reloc MY(canonicalize_reloc)
+
+
+
+/* // 2DEL - not working in process
+static void
+MY (relocatable_reloc) (reloc_howto_type *howto,
+                        bfd *output_bfd,
+                        arelent *rel,
+                        bfd_vma relocation,
+                        bfd_vma r_addr)
+{
+  asymbol *sym;
+
+  (void) relocation;
+  (void) r_addr;
+
+  if (rel == NULL || rel->sym_ptr_ptr == NULL)
+    return;
+  if (*(rel->sym_ptr_ptr) == NULL)
+    return;
+
+  sym = *(rel->sym_ptr_ptr);
+
+#ifdef DEBUG_PLAN9
+  fprintf (stderr,
+           "DBG PLAN9 RELOCATABLE_RELOC before: addr=%#lx addend=%#lx sym=%s flags=%#lx pc=%d size=%d\n",
+           (unsigned long) rel->address,
+           (unsigned long) rel->addend,
+           sym->name ? sym->name : "(null)",
+           (unsigned long) sym->flags,
+           howto ? (int) howto->pc_relative : -1,
+           howto ? (int) howto->size : -1);
+#endif
+
+  / * Plan 9 i386 fix:
+     section-symbol absolute relocs against .data/.bss carry an addend
+     biased by section VMA (e.g. .data-0x40).  Undo that before final
+     relocation is written/applied. * /
+  if (howto != NULL
+      && !howto->pc_relative
+      && sym->section == obj_datasec (output_bfd))
+    {
+      rel->addend += obj_datasec (output_bfd)->vma;
+#ifdef DEBUG_PLAN9
+      fprintf (stderr,
+               "DBG PLAN9 RELOCATABLE_RELOC after : addr=%#lx addend=%#lx sym=.data datavma=%#lx\n",
+               (unsigned long) rel->address,
+               (unsigned long) rel->addend,
+               (unsigned long) obj_datasec (output_bfd)->vma);
+#endif
+    }
+  else if (howto != NULL
+           && !howto->pc_relative
+           && sym->section == obj_bsssec (output_bfd))
+    {
+      rel->addend += obj_bsssec (output_bfd)->vma;
+#ifdef DEBUG_PLAN9
+      fprintf (stderr,
+               "DBG PLAN9 RELOCATABLE_RELOC after : addr=%#lx addend=%#lx sym=.bss bssvma=%#lx\n",
+               (unsigned long) rel->address,
+               (unsigned long) rel->addend,
+               (unsigned long) obj_bsssec (output_bfd)->vma);
+#endif
+    }
+}
+#define MY_relocatable_reloc MY(relocatable_reloc)
+*/
+
+
+/*
+static bfd_vma
+MY (section_reloc_base) (bfd *input_bfd, asection *input_section, asection *section, int r_pcrel)
+{
+  bfd_vma relocation;
+
+  relocation = (section->output_section->vma
+                + section->output_offset
+                - section->vma);
+
+  if (r_pcrel)
+    relocation += input_section->vma;
+
+  return relocation;
+}
+
+static bfd_vma
+MY (section_reloc_addend) (bfd *input_bfd, asection *section)
+{
+  if (section == obj_datasec (input_bfd))
+    return obj_datasec (input_bfd)->vma;
+  if (section == obj_bsssec (input_bfd))
+    return obj_bsssec (input_bfd)->vma;
+  return 0;
+}
+*/
+/* END reloc hooks additions */
+
 #include "aout-target.h"
+#include "safe-ctype.h"
+#include "aoutx-plan9-i386.h"
 
 static CONST struct aout_backend_data MY(backend_data) = {
 	0,	/* zmagic_contiguous */
