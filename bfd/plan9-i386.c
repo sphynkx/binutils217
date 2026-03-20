@@ -370,9 +370,27 @@ MY (section_reloc_addend) (bfd *input_bfd, asection *section)
 */
 /* END reloc hooks additions */
 
+/*start add1 */
+static bfd_boolean MY (bfd_final_link) (bfd *abfd,
+					struct bfd_link_info *info);
+
+#define MY_bfd_final_link MY (bfd_final_link)
+/*end add1 */
 #include "aout-target.h"
 #include "safe-ctype.h"
 #include "aoutx-plan9-i386.h"
+
+/*start add2 */
+bfd_boolean MY (final_link) (bfd *abfd,
+			     struct bfd_link_info *info,
+			     void (*callback) (bfd *, file_ptr *, file_ptr *, file_ptr *));
+
+static bfd_boolean
+MY (bfd_final_link) (bfd *abfd, struct bfd_link_info *info)
+{
+  return MY (final_link) (abfd, info, MY_final_link_callback);
+}
+/*end add2 */
 
 static CONST struct aout_backend_data MY(backend_data) = {
 	0,	/* zmagic_contiguous */

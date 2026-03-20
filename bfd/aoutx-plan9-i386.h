@@ -1741,10 +1741,16 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 			     bfd_size_type rel_size,
 			     bfd_byte *contents)
 {
+  fprintf (stderr,
+	   "DBG P9 MY_link_input_section_std entered: %s sec=%s rel_size=%lx\n",
+	   bfd_get_filename (input_bfd),
+	   bfd_section_name (input_bfd, input_section),
+	   (unsigned long) rel_size);
+
   bfd_boolean (*check_dynamic_reloc)
     (struct bfd_link_info *, bfd *, asection *,
-	     struct aout_link_hash_entry *, void *, bfd_byte *, bfd_boolean *,
-	     bfd_vma *);
+     struct aout_link_hash_entry *, void *, bfd_byte *, bfd_boolean *,
+     bfd_vma *);
   bfd *output_bfd;
   bfd_boolean relocatable;
   struct external_nlist *syms;
@@ -1796,9 +1802,9 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 
 	if (bfd_header_big_endian (input_bfd))
 	  {
-	    r_index   =  (((unsigned int) rel->r_index[0] << 16)
-			  | ((unsigned int) rel->r_index[1] << 8)
-			  | rel->r_index[2]);
+	    r_index   = (((unsigned int) rel->r_index[0] << 16)
+			 | ((unsigned int) rel->r_index[1] << 8)
+			 | rel->r_index[2]);
 	    r_extern  = (0 != (rel->r_type[0] & RELOC_STD_BITS_EXTERN_BIG));
 	    r_pcrel   = (0 != (rel->r_type[0] & RELOC_STD_BITS_PCREL_BIG));
 	    r_baserel = (0 != (rel->r_type[0] & RELOC_STD_BITS_BASEREL_BIG));
@@ -1849,9 +1855,9 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 
 		  /* Change the r_extern value.  */
 		  if (bfd_header_big_endian (output_bfd))
-		    rel->r_type[0] &=~ RELOC_STD_BITS_EXTERN_BIG;
+		    rel->r_type[0] &= ~RELOC_STD_BITS_EXTERN_BIG;
 		  else
-		    rel->r_type[0] &=~ RELOC_STD_BITS_EXTERN_LITTLE;
+		    rel->r_type[0] &= ~RELOC_STD_BITS_EXTERN_LITTLE;
 
 		  /* Compute a new r_index.  */
 		  output_section = h->root.u.def.section->output_section;
@@ -1881,10 +1887,7 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 		      if (h != NULL)
 			{
 			  /* We decided to strip this symbol, but it
-                             turns out that we can't.  Note that we
-                             lose the other and desc information here.
-                             I don't think that will ever matter for a
-                             global symbol.  */
+			     turns out that we can't.  */
 			  if (h->indx < 0)
 			    {
 			      h->indx = -2;
@@ -1959,8 +1962,8 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 	    r = bfd_reloc_ok;
 	  else
 	    r = MY_relocate_contents (howto,
-					input_bfd, relocation,
-					contents + r_addr);
+				      input_bfd, relocation,
+				      contents + r_addr);
 	}
       else
 	{
@@ -1996,11 +1999,27 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 	      asection *section;
 
 	      section = MY (reloc_index_to_section) (input_bfd, r_index);
-	      relocation = (section->output_section->vma
-			    + section->output_offset
-			    - section->vma);
+
+	      fprintf (stderr,
+		       "DBG P9 FINAL ELSE PRE: sec=%s sec_vma=%lx out_vma=%lx out_off=%lx r_pcrel=%d\n",
+		       bfd_section_name (input_bfd, section),
+		       (unsigned long) section->vma,
+		       (unsigned long) section->output_section->vma,
+		       (unsigned long) section->output_offset,
+		       r_pcrel);
+
 	      if (r_pcrel)
-		relocation += input_section->vma;
+		relocation = (section->output_section->vma
+			      + section->output_offset
+			      - section->vma
+			      + input_section->vma);
+	      else
+		relocation = (section->output_section->vma
+			      + section->output_offset);
+
+	      fprintf (stderr,
+		       "DBG P9 FINAL ELSE POST: relocation=%lx\n",
+		       (unsigned long) relocation);
 	    }
 
 	  if (check_dynamic_reloc != NULL)
@@ -2015,9 +2034,7 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 		continue;
 	    }
 
-	  /* Now warn if a global symbol is undefined.  We could not
-             do this earlier, because check_dynamic_reloc might want
-             to skip this reloc.  */
+	  /* Now warn if a global symbol is undefined.  */
 	  if (hundef && ! finfo->info->shared && ! r_baserel)
 	    {
 	      const char *name;
@@ -2028,14 +2045,40 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 		name = strings + GET_WORD (input_bfd, syms[r_index].e_strx);
 	      if (! ((*finfo->info->callbacks->undefined_symbol)
 		     (finfo->info, name, input_bfd, input_section,
-		     r_addr, TRUE)))
+		      r_addr, TRUE)))
 		return FALSE;
+	    }
+
+	  if (!r_extern)
+	    {
+	      asection *section = MY (reloc_index_to_section) (input_bfd, r_index);
+	      unsigned long word = bfd_get_32 (input_bfd, contents + r_addr);
+
+	      fprintf (stderr,
+		       "DBG P9 FINAL ABS: r_addr=%lx sec=%s sec_vma=%lx out_vma=%lx out_off=%lx reloc=%lx word=%lx pcrel=%d\n",
+		       (unsigned long) r_addr,
+		       bfd_section_name (input_bfd, section),
+		       (unsigned long) section->vma,
+		       (unsigned long) section->output_section->vma,
+		       (unsigned long) section->output_offset,
+		       (unsigned long) relocation,
+		       word,
+		       r_pcrel);
 	    }
 
 	  r = MY_final_link_relocate (howto,
 				      input_bfd, input_section,
 				      contents, r_addr, relocation,
 				      (bfd_vma) 0);
+
+	  if (!r_extern)
+	    {
+	      unsigned long word_after = bfd_get_32 (input_bfd, contents + r_addr);
+	      fprintf (stderr,
+		       "DBG P9 FINAL ABS AFTER: r_addr=%lx word=%lx\n",
+		       (unsigned long) r_addr,
+		       word_after);
+	    }
 	}
 
       if (r != bfd_reloc_ok)
@@ -2083,6 +2126,10 @@ MY (link_input_section) (struct MY (final_link_info) *finfo,
 			 file_ptr *reloff_ptr,
 			 bfd_size_type rel_size)
 {
+	fprintf (stderr, "DBG P9 MY_link_input_section entered: %s sec=%s rel_size=%lx\n",
+         bfd_get_filename (input_bfd),
+         bfd_section_name (input_bfd, input_section),
+         (unsigned long) rel_size);
   bfd_size_type input_size;
   void * relocs;
 
@@ -2118,10 +2165,9 @@ MY (link_input_section) (struct MY (final_link_info) *finfo,
     }
   else
     {
-      if (! MY (link_input_section_ext) ((struct aout_final_link_info *) finfo,
-					 input_bfd, input_section,
-					 (struct reloc_ext_external *) relocs,
-					 rel_size, finfo->contents))
+      if (! MY (link_input_section_ext) (finfo, input_bfd, input_section,
+                                   (struct reloc_ext_external *) relocs,
+                                   rel_size, finfo->contents))
 	return FALSE;
     }
 
@@ -2159,6 +2205,8 @@ MY (link_input_section) (struct MY (final_link_info) *finfo,
 static bfd_boolean
 MY (link_input_bfd) (struct MY (final_link_info) *finfo, bfd *input_bfd)
 {
+	fprintf (stderr, "DBG P9 MY_link_input_bfd entered: %s\n",
+			 bfd_get_filename (input_bfd));
   bfd_size_type sym_count;
 
   BFD_ASSERT (bfd_get_format (input_bfd) == bfd_object);
@@ -2220,7 +2268,9 @@ MY (final_link) (bfd *abfd,
 		 struct bfd_link_info *info,
 		 void (*callback) (bfd *, file_ptr *, file_ptr *, file_ptr *))
 {
+	fprintf (stderr, "DBG P9 MY_final_link entered\n");
   struct MY (final_link_info) finfo;
+	fprintf (stderr, "DBG P9 FL 1 after init locals\n");
   bfd_boolean includes_hash_initialized = FALSE;
   bfd *sub;
   bfd_size_type trsize, drsize;
@@ -2248,7 +2298,10 @@ MY (final_link) (bfd *abfd,
 			      MY (link_includes_newfunc),
 			      sizeof (struct MY (link_includes_entry)),
 			      251))
-    goto error_return;
+				  {
+					fprintf (stderr, "DBG P9 FL 2 after includes hash init\n");
+					goto error_return;
+					}
   includes_hash_initialized = TRUE;
 
   /* Figure out the largest section size.  Also, if generating
@@ -2305,6 +2358,7 @@ MY (final_link) (bfd *abfd,
 	    max_sym_count = sz;
 	}
     }
+	fprintf (stderr, "DBG P9 FL 3 after input size scan\n");
 
   if (info->relocatable)
     {
@@ -2317,6 +2371,8 @@ MY (final_link) (bfd *abfd,
 						 ->map_head.link_order)
 		   * obj_reloc_entry_size (abfd));
     }
+	fprintf (stderr, "DBG P9 FL 4 after reloc count setup tr=%lx dr=%lx\n",
+			 (unsigned long) trsize, (unsigned long) drsize);
 
   exec_hdr (abfd)->a_trsize = trsize;
   exec_hdr (abfd)->a_drsize = drsize;
@@ -2326,8 +2382,29 @@ MY (final_link) (bfd *abfd,
   /* Adjust the section sizes and vmas according to the magic number.
      This sets a_text, a_data and a_bss in the exec_hdr and sets the
      filepos for each section.  */
+	fprintf (stderr, "DBG P9 FL 5 before adjust_sizes_and_vmas\n");
   if (! NAME (aout, adjust_sizes_and_vmas) (abfd, &text_size, &text_end))
+  {
+	fprintf (stderr,
+			 "DBG FINAL_LAYOUT text: vma=%lx size=%lx filepos=%lx | "
+			 "data: vma=%lx size=%lx filepos=%lx | "
+			 "bss: vma=%lx size=%lx filepos=%lx | "
+			 "text_end=%lx\n",
+			 (unsigned long) obj_textsec (abfd)->vma,
+			 (unsigned long) obj_textsec (abfd)->size,
+			 (unsigned long) obj_textsec (abfd)->filepos,
+			 (unsigned long) obj_datasec (abfd)->vma,
+			 (unsigned long) obj_datasec (abfd)->size,
+			 (unsigned long) obj_datasec (abfd)->filepos,
+			 (unsigned long) obj_bsssec (abfd)->vma,
+			 (unsigned long) obj_bsssec (abfd)->size,
+			 (unsigned long) obj_bsssec (abfd)->filepos,
+			 (unsigned long) text_end);
     goto error_return;
+}
+	fprintf (stderr, "DBG P9 FL 6 after adjust_sizes_and_vmas text_vma=%lx data_vma=%lx\n",
+			 (unsigned long) obj_textsec (abfd)->vma,
+			 (unsigned long) obj_datasec (abfd)->vma);
 
   /* The relocation and symbol file positions differ among a.out
      targets.  We are passed a callback routine from the backend
@@ -2339,6 +2416,10 @@ MY (final_link) (bfd *abfd,
      be the case for the hp300hpux target, for example.  */
   (*callback) (abfd, &finfo.treloff, &finfo.dreloff,
 	       &finfo.symoff);
+	fprintf (stderr, "DBG P9 FL 7 after callback treloff=%lx dreloff=%lx symoff=%lx\n",
+			 (unsigned long) finfo.treloff,
+			 (unsigned long) finfo.dreloff,
+			 (unsigned long) finfo.symoff);
   obj_textsec (abfd)->rel_filepos = finfo.treloff;
   obj_datasec (abfd)->rel_filepos = finfo.dreloff;
   obj_sym_filepos (abfd) = finfo.symoff;
@@ -2348,15 +2429,20 @@ MY (final_link) (bfd *abfd,
 
   /* We accumulate the string table as we write out the symbols.  */
   finfo.strtab = _bfd_stringtab_init ();
+	fprintf (stderr, "DBG P9 FL 8 after stringtab init\n");
   if (finfo.strtab == NULL)
     goto error_return;
 
   /* Allocate buffers to hold section contents and relocs.  */
   finfo.contents = bfd_malloc (max_contents_size);
+	fprintf (stderr, "DBG P9 FL 9.1 after buffer alloc\n");
   finfo.relocs = bfd_malloc (max_relocs_size);
+	fprintf (stderr, "DBG P9 FL 9.2 after buffer alloc\n");
   finfo.symbol_map = bfd_malloc (max_sym_count * sizeof (int));
+	fprintf (stderr, "DBG P9 FL 9.3 after buffer alloc\n");
   finfo.output_syms = bfd_malloc ((max_sym_count + 1)
 				  * sizeof (struct external_nlist));
+	fprintf (stderr, "DBG P9 FL 9.4 after buffer alloc\n");
   if ((finfo.contents == NULL && max_contents_size != 0)
       || (finfo.relocs == NULL && max_relocs_size != 0)
       || (finfo.symbol_map == NULL && max_sym_count != 0)
@@ -2370,8 +2456,13 @@ MY (final_link) (bfd *abfd,
   {
     struct aout_link_hash_entry *h;
 
+	fprintf (stderr, "DBG P9 FL 10 before __DYNAMIC write\n");
+
     h = aout_link_hash_lookup (aout_hash_table (info), "__DYNAMIC",
 			       FALSE, FALSE, FALSE);
+	fprintf (stderr, "DBG P9 FL 11 after __DYNAMIC write\n");
+	fprintf (stderr, "DBG P9 FL 12 before mark sections\n");
+	fprintf (stderr, "DBG P9 FL 13 before main link_order traversal\n");
     if (h != NULL)
       MY (link_write_other_symbol) (h, &finfo);
   }
@@ -2427,6 +2518,8 @@ MY (final_link) (bfd *abfd,
 	      input_bfd = p->u.indirect.section->owner;
 	      if (! input_bfd->output_has_begun)
 		{
+		fprintf (stderr, "DBG P9 FL 14 about to link input_bfd=%s\n",
+				 bfd_get_filename (input_bfd));
 		  if (! MY (link_input_bfd) (&finfo, input_bfd))
 		    goto error_return;
 		  input_bfd->output_has_begun = TRUE;
