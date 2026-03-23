@@ -1741,11 +1741,6 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 			     bfd_size_type rel_size,
 			     bfd_byte *contents)
 {
-  fprintf (stderr,
-	   "DBG P9 MY_link_input_section_std entered: %s sec=%s rel_size=%lx\n",
-	   bfd_get_filename (input_bfd),
-	   bfd_section_name (input_bfd, input_section),
-	   (unsigned long) rel_size);
 
   bfd_boolean (*check_dynamic_reloc)
     (struct bfd_link_info *, bfd *, asection *,
@@ -2000,13 +1995,6 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 
 	      section = MY (reloc_index_to_section) (input_bfd, r_index);
 
-	      fprintf (stderr,
-		       "DBG P9 FINAL ELSE PRE: sec=%s sec_vma=%lx out_vma=%lx out_off=%lx r_pcrel=%d\n",
-		       bfd_section_name (input_bfd, section),
-		       (unsigned long) section->vma,
-		       (unsigned long) section->output_section->vma,
-		       (unsigned long) section->output_offset,
-		       r_pcrel);
 
 	      if (r_pcrel)
 		relocation = (section->output_section->vma
@@ -2017,9 +2005,6 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 		relocation = (section->output_section->vma
 			      + section->output_offset);
 
-	      fprintf (stderr,
-		       "DBG P9 FINAL ELSE POST: relocation=%lx\n",
-		       (unsigned long) relocation);
 	    }
 
 	  if (check_dynamic_reloc != NULL)
@@ -2054,16 +2039,6 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 	      asection *section = MY (reloc_index_to_section) (input_bfd, r_index);
 	      unsigned long word = bfd_get_32 (input_bfd, contents + r_addr);
 
-	      fprintf (stderr,
-		       "DBG P9 FINAL ABS: r_addr=%lx sec=%s sec_vma=%lx out_vma=%lx out_off=%lx reloc=%lx word=%lx pcrel=%d\n",
-		       (unsigned long) r_addr,
-		       bfd_section_name (input_bfd, section),
-		       (unsigned long) section->vma,
-		       (unsigned long) section->output_section->vma,
-		       (unsigned long) section->output_offset,
-		       (unsigned long) relocation,
-		       word,
-		       r_pcrel);
 	    }
 
 	  r = MY_final_link_relocate (howto,
@@ -2074,10 +2049,6 @@ MY (link_input_section_std) (struct MY (final_link_info) *finfo,
 	  if (!r_extern)
 	    {
 	      unsigned long word_after = bfd_get_32 (input_bfd, contents + r_addr);
-	      fprintf (stderr,
-		       "DBG P9 FINAL ABS AFTER: r_addr=%lx word=%lx\n",
-		       (unsigned long) r_addr,
-		       word_after);
 	    }
 	}
 
@@ -2126,10 +2097,6 @@ MY (link_input_section) (struct MY (final_link_info) *finfo,
 			 file_ptr *reloff_ptr,
 			 bfd_size_type rel_size)
 {
-	fprintf (stderr, "DBG P9 MY_link_input_section entered: %s sec=%s rel_size=%lx\n",
-         bfd_get_filename (input_bfd),
-         bfd_section_name (input_bfd, input_section),
-         (unsigned long) rel_size);
   bfd_size_type input_size;
   void * relocs;
 
@@ -2205,8 +2172,6 @@ MY (link_input_section) (struct MY (final_link_info) *finfo,
 static bfd_boolean
 MY (link_input_bfd) (struct MY (final_link_info) *finfo, bfd *input_bfd)
 {
-	fprintf (stderr, "DBG P9 MY_link_input_bfd entered: %s\n",
-			 bfd_get_filename (input_bfd));
   bfd_size_type sym_count;
 
   BFD_ASSERT (bfd_get_format (input_bfd) == bfd_object);
@@ -2268,9 +2233,7 @@ MY (final_link) (bfd *abfd,
 		 struct bfd_link_info *info,
 		 void (*callback) (bfd *, file_ptr *, file_ptr *, file_ptr *))
 {
-	fprintf (stderr, "DBG P9 MY_final_link entered\n");
   struct MY (final_link_info) finfo;
-	fprintf (stderr, "DBG P9 FL 1 after init locals\n");
 /*start add*/
 {
   struct bfd_link_hash_entry *hmain;
@@ -2285,49 +2248,16 @@ MY (final_link) (bfd *abfd,
       && (hmain->type == bfd_link_hash_defined || hmain->type == bfd_link_hash_defweak)
       && hmain->u.def.section != NULL
       && hmain->u.def.section->output_section != NULL)
-    fprintf (stderr,
-             "DBG P9 SYM _main: val=%lx sec=%s sec_vma=%lx out=%s out_vma=%lx out_off=%lx final=%lx\n",
-             (unsigned long) hmain->u.def.value,
-             hmain->u.def.section->name ? hmain->u.def.section->name : "(null)",
-             (unsigned long) hmain->u.def.section->vma,
-             hmain->u.def.section->output_section->name ? hmain->u.def.section->output_section->name : "(null)",
-             (unsigned long) hmain->u.def.section->output_section->vma,
-             (unsigned long) hmain->u.def.section->output_offset,
-             (unsigned long) (hmain->u.def.value
-                              + hmain->u.def.section->output_section->vma
-                              + hmain->u.def.section->output_offset));
 
   if (hcallmain != NULL
       && (hcallmain->type == bfd_link_hash_defined || hcallmain->type == bfd_link_hash_defweak)
       && hcallmain->u.def.section != NULL
       && hcallmain->u.def.section->output_section != NULL)
-    fprintf (stderr,
-             "DBG P9 SYM _callmain: val=%lx sec=%s sec_vma=%lx out=%s out_vma=%lx out_off=%lx final=%lx\n",
-             (unsigned long) hcallmain->u.def.value,
-             hcallmain->u.def.section->name ? hcallmain->u.def.section->name : "(null)",
-             (unsigned long) hcallmain->u.def.section->vma,
-             hcallmain->u.def.section->output_section->name ? hcallmain->u.def.section->output_section->name : "(null)",
-             (unsigned long) hcallmain->u.def.section->output_section->vma,
-             (unsigned long) hcallmain->u.def.section->output_offset,
-             (unsigned long) (hcallmain->u.def.value
-                              + hcallmain->u.def.section->output_section->vma
-                              + hcallmain->u.def.section->output_offset));
 
   if (hmain_c != NULL
       && (hmain_c->type == bfd_link_hash_defined || hmain_c->type == bfd_link_hash_defweak)
       && hmain_c->u.def.section != NULL
       && hmain_c->u.def.section->output_section != NULL)
-    fprintf (stderr,
-             "DBG P9 SYM main: val=%lx sec=%s sec_vma=%lx out=%s out_vma=%lx out_off=%lx final=%lx\n",
-             (unsigned long) hmain_c->u.def.value,
-             hmain_c->u.def.section->name ? hmain_c->u.def.section->name : "(null)",
-             (unsigned long) hmain_c->u.def.section->vma,
-             hmain_c->u.def.section->output_section->name ? hmain_c->u.def.section->output_section->name : "(null)",
-             (unsigned long) hmain_c->u.def.section->output_section->vma,
-             (unsigned long) hmain_c->u.def.section->output_offset,
-             (unsigned long) (hmain_c->u.def.value
-                              + hmain_c->u.def.section->output_section->vma
-                              + hmain_c->u.def.section->output_offset));
 }
 /*end add*/
   bfd_boolean includes_hash_initialized = FALSE;
@@ -2358,7 +2288,6 @@ MY (final_link) (bfd *abfd,
 			      sizeof (struct MY (link_includes_entry)),
 			      251))
 				  {
-					fprintf (stderr, "DBG P9 FL 2 after includes hash init\n");
 					goto error_return;
 					}
   includes_hash_initialized = TRUE;
@@ -2417,7 +2346,6 @@ MY (final_link) (bfd *abfd,
 	    max_sym_count = sz;
 	}
     }
-	fprintf (stderr, "DBG P9 FL 3 after input size scan\n");
 
   if (info->relocatable)
     {
@@ -2430,45 +2358,20 @@ MY (final_link) (bfd *abfd,
 						 ->map_head.link_order)
 		   * obj_reloc_entry_size (abfd));
     }
-	fprintf (stderr, "DBG P9 FL 4 after reloc count setup tr=%lx dr=%lx\n",
-			 (unsigned long) trsize, (unsigned long) drsize);
 
   exec_hdr (abfd)->a_trsize = trsize;
   exec_hdr (abfd)->a_drsize = drsize;
 
-	fprintf (stderr,
-			 "DBG P9 STARTADDR final_link: start=%lx text_vma=%lx\n",
-			 (unsigned long) bfd_get_start_address (abfd),
-			 (unsigned long) obj_textsec (abfd)->vma);
 
   exec_hdr (abfd)->a_entry = bfd_get_start_address (abfd);
 
   /* Adjust the section sizes and vmas according to the magic number.
      This sets a_text, a_data and a_bss in the exec_hdr and sets the
      filepos for each section.  */
-	fprintf (stderr, "DBG P9 FL 5 before adjust_sizes_and_vmas\n");
   if (! NAME (aout, adjust_sizes_and_vmas) (abfd, &text_size, &text_end))
   {
-	fprintf (stderr,
-			 "DBG FINAL_LAYOUT text: vma=%lx size=%lx filepos=%lx | "
-			 "data: vma=%lx size=%lx filepos=%lx | "
-			 "bss: vma=%lx size=%lx filepos=%lx | "
-			 "text_end=%lx\n",
-			 (unsigned long) obj_textsec (abfd)->vma,
-			 (unsigned long) obj_textsec (abfd)->size,
-			 (unsigned long) obj_textsec (abfd)->filepos,
-			 (unsigned long) obj_datasec (abfd)->vma,
-			 (unsigned long) obj_datasec (abfd)->size,
-			 (unsigned long) obj_datasec (abfd)->filepos,
-			 (unsigned long) obj_bsssec (abfd)->vma,
-			 (unsigned long) obj_bsssec (abfd)->size,
-			 (unsigned long) obj_bsssec (abfd)->filepos,
-			 (unsigned long) text_end);
     goto error_return;
 }
-	fprintf (stderr, "DBG P9 FL 6 after adjust_sizes_and_vmas text_vma=%lx data_vma=%lx\n",
-			 (unsigned long) obj_textsec (abfd)->vma,
-			 (unsigned long) obj_datasec (abfd)->vma);
 
   /* The relocation and symbol file positions differ among a.out
      targets.  We are passed a callback routine from the backend
@@ -2480,10 +2383,6 @@ MY (final_link) (bfd *abfd,
      be the case for the hp300hpux target, for example.  */
   (*callback) (abfd, &finfo.treloff, &finfo.dreloff,
 	       &finfo.symoff);
-	fprintf (stderr, "DBG P9 FL 7 after callback treloff=%lx dreloff=%lx symoff=%lx\n",
-			 (unsigned long) finfo.treloff,
-			 (unsigned long) finfo.dreloff,
-			 (unsigned long) finfo.symoff);
   obj_textsec (abfd)->rel_filepos = finfo.treloff;
   obj_datasec (abfd)->rel_filepos = finfo.dreloff;
   obj_sym_filepos (abfd) = finfo.symoff;
@@ -2493,20 +2392,15 @@ MY (final_link) (bfd *abfd,
 
   /* We accumulate the string table as we write out the symbols.  */
   finfo.strtab = _bfd_stringtab_init ();
-	fprintf (stderr, "DBG P9 FL 8 after stringtab init\n");
   if (finfo.strtab == NULL)
     goto error_return;
 
   /* Allocate buffers to hold section contents and relocs.  */
   finfo.contents = bfd_malloc (max_contents_size);
-	fprintf (stderr, "DBG P9 FL 9.1 after buffer alloc\n");
   finfo.relocs = bfd_malloc (max_relocs_size);
-	fprintf (stderr, "DBG P9 FL 9.2 after buffer alloc\n");
   finfo.symbol_map = bfd_malloc (max_sym_count * sizeof (int));
-	fprintf (stderr, "DBG P9 FL 9.3 after buffer alloc\n");
   finfo.output_syms = bfd_malloc ((max_sym_count + 1)
 				  * sizeof (struct external_nlist));
-	fprintf (stderr, "DBG P9 FL 9.4 after buffer alloc\n");
   if ((finfo.contents == NULL && max_contents_size != 0)
       || (finfo.relocs == NULL && max_relocs_size != 0)
       || (finfo.symbol_map == NULL && max_sym_count != 0)
@@ -2520,13 +2414,9 @@ MY (final_link) (bfd *abfd,
   {
     struct aout_link_hash_entry *h;
 
-	fprintf (stderr, "DBG P9 FL 10 before __DYNAMIC write\n");
 
     h = aout_link_hash_lookup (aout_hash_table (info), "__DYNAMIC",
 			       FALSE, FALSE, FALSE);
-	fprintf (stderr, "DBG P9 FL 11 after __DYNAMIC write\n");
-	fprintf (stderr, "DBG P9 FL 12 before mark sections\n");
-	fprintf (stderr, "DBG P9 FL 13 before main link_order traversal\n");
     if (h != NULL)
       MY (link_write_other_symbol) (h, &finfo);
   }
@@ -2582,8 +2472,6 @@ MY (final_link) (bfd *abfd,
 	      input_bfd = p->u.indirect.section->owner;
 	      if (! input_bfd->output_has_begun)
 		{
-		fprintf (stderr, "DBG P9 FL 14 about to link input_bfd=%s\n",
-				 bfd_get_filename (input_bfd));
 		  if (! MY (link_input_bfd) (&finfo, input_bfd))
 		    goto error_return;
 		  input_bfd->output_has_begun = TRUE;
