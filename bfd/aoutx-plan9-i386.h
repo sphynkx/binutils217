@@ -2271,6 +2271,65 @@ MY (final_link) (bfd *abfd,
 	fprintf (stderr, "DBG P9 MY_final_link entered\n");
   struct MY (final_link_info) finfo;
 	fprintf (stderr, "DBG P9 FL 1 after init locals\n");
+/*start add*/
+{
+  struct bfd_link_hash_entry *hmain;
+  struct bfd_link_hash_entry *hcallmain;
+  struct bfd_link_hash_entry *hmain_c;
+
+  hmain = bfd_link_hash_lookup (info->hash, "_main", FALSE, FALSE, TRUE);
+  hcallmain = bfd_link_hash_lookup (info->hash, "_callmain", FALSE, FALSE, TRUE);
+  hmain_c = bfd_link_hash_lookup (info->hash, "main", FALSE, FALSE, TRUE);
+
+  if (hmain != NULL
+      && (hmain->type == bfd_link_hash_defined || hmain->type == bfd_link_hash_defweak)
+      && hmain->u.def.section != NULL
+      && hmain->u.def.section->output_section != NULL)
+    fprintf (stderr,
+             "DBG P9 SYM _main: val=%lx sec=%s sec_vma=%lx out=%s out_vma=%lx out_off=%lx final=%lx\n",
+             (unsigned long) hmain->u.def.value,
+             hmain->u.def.section->name ? hmain->u.def.section->name : "(null)",
+             (unsigned long) hmain->u.def.section->vma,
+             hmain->u.def.section->output_section->name ? hmain->u.def.section->output_section->name : "(null)",
+             (unsigned long) hmain->u.def.section->output_section->vma,
+             (unsigned long) hmain->u.def.section->output_offset,
+             (unsigned long) (hmain->u.def.value
+                              + hmain->u.def.section->output_section->vma
+                              + hmain->u.def.section->output_offset));
+
+  if (hcallmain != NULL
+      && (hcallmain->type == bfd_link_hash_defined || hcallmain->type == bfd_link_hash_defweak)
+      && hcallmain->u.def.section != NULL
+      && hcallmain->u.def.section->output_section != NULL)
+    fprintf (stderr,
+             "DBG P9 SYM _callmain: val=%lx sec=%s sec_vma=%lx out=%s out_vma=%lx out_off=%lx final=%lx\n",
+             (unsigned long) hcallmain->u.def.value,
+             hcallmain->u.def.section->name ? hcallmain->u.def.section->name : "(null)",
+             (unsigned long) hcallmain->u.def.section->vma,
+             hcallmain->u.def.section->output_section->name ? hcallmain->u.def.section->output_section->name : "(null)",
+             (unsigned long) hcallmain->u.def.section->output_section->vma,
+             (unsigned long) hcallmain->u.def.section->output_offset,
+             (unsigned long) (hcallmain->u.def.value
+                              + hcallmain->u.def.section->output_section->vma
+                              + hcallmain->u.def.section->output_offset));
+
+  if (hmain_c != NULL
+      && (hmain_c->type == bfd_link_hash_defined || hmain_c->type == bfd_link_hash_defweak)
+      && hmain_c->u.def.section != NULL
+      && hmain_c->u.def.section->output_section != NULL)
+    fprintf (stderr,
+             "DBG P9 SYM main: val=%lx sec=%s sec_vma=%lx out=%s out_vma=%lx out_off=%lx final=%lx\n",
+             (unsigned long) hmain_c->u.def.value,
+             hmain_c->u.def.section->name ? hmain_c->u.def.section->name : "(null)",
+             (unsigned long) hmain_c->u.def.section->vma,
+             hmain_c->u.def.section->output_section->name ? hmain_c->u.def.section->output_section->name : "(null)",
+             (unsigned long) hmain_c->u.def.section->output_section->vma,
+             (unsigned long) hmain_c->u.def.section->output_offset,
+             (unsigned long) (hmain_c->u.def.value
+                              + hmain_c->u.def.section->output_section->vma
+                              + hmain_c->u.def.section->output_offset));
+}
+/*end add*/
   bfd_boolean includes_hash_initialized = FALSE;
   bfd *sub;
   bfd_size_type trsize, drsize;
@@ -2376,6 +2435,11 @@ MY (final_link) (bfd *abfd,
 
   exec_hdr (abfd)->a_trsize = trsize;
   exec_hdr (abfd)->a_drsize = drsize;
+
+	fprintf (stderr,
+			 "DBG P9 STARTADDR final_link: start=%lx text_vma=%lx\n",
+			 (unsigned long) bfd_get_start_address (abfd),
+			 (unsigned long) obj_textsec (abfd)->vma);
 
   exec_hdr (abfd)->a_entry = bfd_get_start_address (abfd);
 
