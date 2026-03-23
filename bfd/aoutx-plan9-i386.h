@@ -2234,32 +2234,6 @@ MY (final_link) (bfd *abfd,
 		 void (*callback) (bfd *, file_ptr *, file_ptr *, file_ptr *))
 {
   struct MY (final_link_info) finfo;
-/*start add*/
-{
-  struct bfd_link_hash_entry *hmain;
-  struct bfd_link_hash_entry *hcallmain;
-  struct bfd_link_hash_entry *hmain_c;
-
-  hmain = bfd_link_hash_lookup (info->hash, "_main", FALSE, FALSE, TRUE);
-  hcallmain = bfd_link_hash_lookup (info->hash, "_callmain", FALSE, FALSE, TRUE);
-  hmain_c = bfd_link_hash_lookup (info->hash, "main", FALSE, FALSE, TRUE);
-
-  if (hmain != NULL
-      && (hmain->type == bfd_link_hash_defined || hmain->type == bfd_link_hash_defweak)
-      && hmain->u.def.section != NULL
-      && hmain->u.def.section->output_section != NULL)
-
-  if (hcallmain != NULL
-      && (hcallmain->type == bfd_link_hash_defined || hcallmain->type == bfd_link_hash_defweak)
-      && hcallmain->u.def.section != NULL
-      && hcallmain->u.def.section->output_section != NULL)
-
-  if (hmain_c != NULL
-      && (hmain_c->type == bfd_link_hash_defined || hmain_c->type == bfd_link_hash_defweak)
-      && hmain_c->u.def.section != NULL
-      && hmain_c->u.def.section->output_section != NULL)
-}
-/*end add*/
   bfd_boolean includes_hash_initialized = FALSE;
   bfd *sub;
   bfd_size_type trsize, drsize;

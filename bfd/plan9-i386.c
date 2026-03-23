@@ -815,45 +815,6 @@ MY (object_p) (bfd *abfd)
 }
 
 
-static boolean
-putsym(bfd *abfd, int type, char *prefix, char *name, bfd_vma value)
-/*
-	bfd *abfd;
-	int type;
-	char *prefix;
-	char *name;
-	bfd_vma value;
-*/
-{
-	int n;
-	char buf[5];
-
-	if(bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0)
-		return false;
-
-	bfd_h_put_32(abfd, value, buf);
-	buf[4] = type | 0x80;
-	if((int)bfd_write ((PTR) buf, (bfd_size_type) sizeof(buf), (bfd_size_type) 1, abfd) != sizeof(buf))
-		return false;
-	obj_sym_filepos (abfd) += sizeof(buf);
-
-	if(prefix != 0) {
-		n = strlen(prefix);
-		if((int)bfd_write ((PTR) prefix, (bfd_size_type) n, (bfd_size_type) 1, abfd) != n)
-			return false;
-		obj_sym_filepos (abfd) += n;
-	}
-
-	n = strlen(name)+1;
-	if((int)bfd_write ((PTR) name, (bfd_size_type) n, (bfd_size_type) 1, abfd) != n)
-		return false;
-	obj_sym_filepos (abfd) += n;
-
-	++obj_aout_external_sym_count (abfd);
-	return true;
-}
-
-
 /* Skip the 2-byte big-endian pair suffix in Plan 9 'z'/'Z' (AHISTORY)
    symbol-table records.  After the NUL-terminated file name, the linker
    appends pairs of big-endian 2-byte values terminated by 0x0000.  Return
