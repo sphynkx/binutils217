@@ -894,16 +894,21 @@ MY(slurp_symbol_table) (bfd *abfd)
 
 	/* Count symbols by scanning the variable-length Plan 9 stream.
 	   Each record: 4-byte big-endian value, 1-byte type (with 0x80 OR'd),
-	   NUL-terminated name.  */
+	   NUL-terminated name.
+	   Exception: 'z'/'Z' type records (Plan 9 source-line history) have
+	   an extra variable-length suffix of 2-byte pairs after the name.  */
 	while (p < ep)
 	{
+		unsigned char stype;
+
 		/* Need at least value (4) + type (1) bytes.  */
 		if (ep - p < 5)
 			break;
 
+		stype = p[4] & ~0x80;
 		p += 5;
 
-		/* Advance past the name.  */
+		/* Advance past the NUL-terminated name.  */
 		while (p < ep && *p != '\0')
 			p++;
 
@@ -918,6 +923,22 @@ MY(slurp_symbol_table) (bfd *abfd)
 
 		/* Skip the NUL terminator.  */
 		p++;
+
+		/* 'z'/'Z' records (AHISTORY source-line records) have an extra
+		   variable-length suffix: big-endian 2-byte pairs, terminated by
+		   a 0x0000 pair.  Skip this suffix and don't count z/Z as symbols.  */
+		if (stype == 'z' || stype == 'Z')
+		{
+			while (p + 2 <= ep)
+			{
+				unsigned int pair = ((unsigned int) p[0] << 8) | p[1];
+				p += 2;
+				if (pair == 0)
+					break;
+			}
+			continue;  /* z/Z records are not nm symbols */
+		}
+
 		nsyms++;
 	}
 
@@ -941,7 +962,8 @@ MY(slurp_symbol_table) (bfd *abfd)
 	memset (cached, 0, cached_size);
 
 	p = syms;
-	for (i = 0; i < nsyms; i++)
+	i = 0;
+	while (p < ep && i < nsyms)
 	{
 		unsigned char stype;
 
@@ -956,15 +978,31 @@ MY(slurp_symbol_table) (bfd *abfd)
 
 		/* Type byte: Plan 9 linker OR-s 0x80 into the type; strip it.  */
 		stype = (unsigned char) (p[4] & ~0x80);
+		p += 5;
 
-		name = p + 5;
+		name = p;
 		while (name < ep && *name != '\0')
 			name++;
 
 		if (name >= ep)
 			break;
 
-		cached[i].symbol.name = strdup ((char *) (p + 5));
+		/* Skip z/Z records in the parsing pass too.  */
+		if (stype == 'z' || stype == 'Z')
+		{
+			p = name + 1;
+			/* Skip 2-byte pairs suffix.  */
+			while (p + 2 <= ep)
+			{
+				unsigned int pair = ((unsigned int) p[0] << 8) | p[1];
+				p += 2;
+				if (pair == 0)
+					break;
+			}
+			continue;
+		}
+
+		cached[i].symbol.name = strdup ((char *) p);
 		if (cached[i].symbol.name == NULL)
 		{
 			free (cached);
@@ -1022,7 +1060,14 @@ MY(slurp_symbol_table) (bfd *abfd)
 			cached[i].symbol.value -= sec->vma;
 
 		p = name + 1;
+		i++;
 	}
+
+	/* Update count to reflect the number of symbols actually parsed.
+	   The counting and parsing passes use the same logic, so i should equal
+	   nsyms in the normal case; update to be safe.  */
+	bfd_get_symcount (abfd) = i;
+	obj_aout_external_sym_count (abfd) = i;
 
 	obj_aout_symbols (abfd) = cached;
 	free (syms);
