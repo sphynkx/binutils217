@@ -726,3 +726,60 @@ if { ![regexp {83\s*f9\s*00\s*ff\s*d1} $got_exits_d] } {
     send_log "objdump -d output was:\n$got_exits_d\n"
 }
 
+# -----------------------------------------------------------------------
+# Tests for nm on a Plan 9 i386 executable (plan9-i386 / 0x1eb format).
+#
+# 'pw' is a real Plan 9 i386 executable containing symbols in the Plan 9
+# inline symbol-stream format: each record is a 4-byte big-endian value,
+# a 1-byte type (with 0x80 OR'd in), and a NUL-terminated name.
+#
+# Before the fix, nm produced no output (or "File in wrong format") because:
+#   1. slurp_symbol_table contained a hardcoded seek to a wrong file offset
+#      (0x20ec) left over from debugging, instead of using obj_sym_filepos.
+#   2. An incorrect external_nlist branch was present (dead code after REAPPLY).
+#   3. A wrong n%12 shortcut misidentified variable-length streams as
+#      fixed 12-byte records.
+#
+# After the fix all three issues are corrected and nm reads symbols correctly.
+# -----------------------------------------------------------------------
+set exec_fixture "$testdir/pw"
+
+# Test 43: nm on the Plan 9 executable does not report "wrong format".
+send_log "Testing: nm on Plan 9 i386 executable pw\n"
+set got_nm_exec [binutils_run $NM "$exec_fixture"]
+
+if { [string length $got_nm_exec] > 0
+     && ![regexp "File format not recognized" $got_nm_exec]
+     && ![regexp "File in wrong format" $got_nm_exec]
+     && ![regexp "no symbols" $got_nm_exec] } {
+    pass "nm reads symbols from Plan 9 i386 executable (pw)"
+} else {
+    fail "nm failed on Plan 9 i386 executable (pw)"
+    send_log "Output was: $got_nm_exec\n"
+}
+
+# Test 44: nm finds 'main' (text symbol) in the executable.
+if { [regexp {main} $got_nm_exec] } {
+    pass "nm finds 'main' symbol in Plan 9 executable"
+} else {
+    fail "nm does not find 'main' symbol in Plan 9 executable"
+    send_log "Output was: $got_nm_exec\n"
+}
+
+# Test 45: nm finds '_callmain' in the executable.
+if { [regexp {_callmain} $got_nm_exec] } {
+    pass "nm finds '_callmain' symbol in Plan 9 executable"
+} else {
+    fail "nm does not find '_callmain' symbol in Plan 9 executable"
+    send_log "Output was: $got_nm_exec\n"
+}
+
+# Test 46: nm finds 'etext' (global text boundary symbol) in the executable.
+if { [regexp {etext} $got_nm_exec] } {
+    pass "nm finds 'etext' symbol in Plan 9 executable"
+} else {
+    fail "nm does not find 'etext' symbol in Plan 9 executable"
+    send_log "Output was: $got_nm_exec\n"
+}
+
+

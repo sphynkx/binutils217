@@ -17,8 +17,6 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 
-#define DEBUG_PLAN9
-
 
 #define	BYTES_IN_WORD	4
 #undef TARGET_IS_BIG_ENDIAN_P
@@ -292,30 +290,7 @@ MY (canonicalize_reloc) (bfd *abfd,
       if (*(rel->sym_ptr_ptr) == NULL)
         continue;
 
-#ifdef DEBUG_PLAN9
-      fprintf (stderr,
-               "DBG PLAN9 CANON_RELOC before: sec=%s idx=%ld addr=%#lx addend=%#lx sym=%s symflags=%#lx pc=%d size=%d\n",
-               section ? section->name : "(null)",
-               i,
-               (unsigned long) rel->address,
-               (unsigned long) rel->addend,
-               (*(rel->sym_ptr_ptr))->name ? (*(rel->sym_ptr_ptr))->name : "(null)",
-               (unsigned long) (*(rel->sym_ptr_ptr))->flags,
-               rel->howto ? (int) rel->howto->pc_relative : -1,
-               rel->howto ? (int) rel->howto->size : -1);
-#endif
-
       MY (fixup_section_symbol_reloc) (abfd, rel);
-
-#ifdef DEBUG_PLAN9
-      fprintf (stderr,
-               "DBG PLAN9 CANON_RELOC after : sec=%s idx=%ld addr=%#lx addend=%#lx sym=%s\n",
-               section ? section->name : "(null)",
-               i,
-               (unsigned long) rel->address,
-               (unsigned long) rel->addend,
-               (*(rel->sym_ptr_ptr))->name ? (*(rel->sym_ptr_ptr))->name : "(null)");
-#endif
     }
 
   return count;
@@ -472,27 +447,7 @@ MY(write_object_contents) (bfd *abfd)
 	file_ptr text_end;
 
 
-/* DBG block start */
-#ifdef DEBUG_PLAN9
-  {
-    asection *s;
-    fprintf (stderr, "DBG BFD WRITE1: start=%#lx output_has_begun=%d\n",
-             (unsigned long) bfd_get_start_address (abfd),
-             (int) abfd->output_has_begun);
-    for (s = abfd->sections; s != NULL; s = s->next)
-      {
-        fprintf (stderr,
-                 "DBG BFD WRITE2: sec=%s vma=%#lx size=%#lx rawsize=%#lx filepos=%#lx flags=%#lx\n",
-                 s->name ? s->name : "(null)",
-                 (unsigned long) s->vma,
-                 (unsigned long) s->size,
-                 (unsigned long) s->rawsize,
-                 (unsigned long) s->filepos,
-                 (unsigned long) s->flags);
-      }
-  }
-#endif
-/* DBG block end */
+
 
 
 	/*
@@ -589,53 +544,22 @@ MY(write_object_contents) (bfd *abfd)
 			execp->a_info = 0; /* fallback */
 		  }
 
-/* temp.disable start* /
-		//execp->a_syms = obj_sym_filepos (abfd) - N_SYMOFF (*execp);
-		execp->a_syms = 0;
-		execp->a_trsize = 0;
-		execp->a_drsize = 0;
-/ * temp.disable end*/
-
-/* temp.replace start*/
 	{
 		unsigned long sym_filepos;
 		unsigned long symoff;
-		unsigned long symsize;
 
 		sym_filepos = (unsigned long) obj_sym_filepos (abfd);
 		symoff = (unsigned long) (EXEC_BYTES_SIZE + execp->a_text + execp->a_data);
-		symsize = sym_filepos - symoff;
-
-		fprintf (stderr,
-			 "DBG P9 HDR PRE: sym_filepos=%lx symoff=%lx symsize=%lx text=%lx data=%lx bss=%lx\n",
-			 sym_filepos,
-			 symoff,
-			 symsize,
-			 (unsigned long) execp->a_text,
-			 (unsigned long) execp->a_data,
-			 (unsigned long) execp->a_bss);
-
-		execp->a_syms = symsize;
+		/* sym_filepos is advanced past all written symbols by the linker.
+		   It should always be >= symoff, but guard against underflow from
+		   a zero/unset filepos (e.g. no symbols or partial link).  */
+		execp->a_syms = (sym_filepos > symoff) ? (sym_filepos - symoff) : 0;
 	}
 
 	execp->a_trsize = 0;
 	execp->a_drsize = 0;
-/* temp.replace end*/
-
-
-		fprintf (stderr,
-				 "DBG P9 STARTADDR write_object_contents: start=%lx text_vma=%lx\n",
-				 (unsigned long) bfd_get_start_address (abfd),
-				 (unsigned long) obj_textsec (abfd)->vma);
 
 		execp->a_entry = bfd_get_start_address (abfd);
-	fprintf (stderr,
-		 "DBG P9 HDR POST: a_syms=%lx a_entry=%lx text=%lx data=%lx bss=%lx\n",
-		 (unsigned long) execp->a_syms,
-		 (unsigned long) execp->a_entry,
-		 (unsigned long) execp->a_text,
-		 (unsigned long) execp->a_data,
-		 (unsigned long) execp->a_bss);
 
 		plan9_swap_exec_header_out (abfd, execp, &exec_bytes);
 
@@ -754,14 +678,6 @@ some_plan9_object_p (bfd *abfd,
 	obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
 	obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + execp->a_text;
 	obj_sym_filepos (abfd) = obj_datasec (abfd)->filepos + execp->a_data;
-	fprintf (stderr,
-		 "DBG P9 OPEN: text_filepos=%lx data_filepos=%lx sym_filepos=%lx a_text=%lx a_data=%lx a_syms=%lx\n",
-		 (unsigned long) obj_textsec (abfd)->filepos,
-		 (unsigned long) obj_datasec (abfd)->filepos,
-		 (unsigned long) obj_sym_filepos (abfd),
-		 (unsigned long) execp->a_text,
-		 (unsigned long) execp->a_data,
-		 (unsigned long) execp->a_syms);
 
 	obj_datasec (abfd)->rawsize = execp->a_data;
 	obj_bsssec (abfd)->rawsize = execp->a_bss;
@@ -786,21 +702,14 @@ some_plan9_object_p (bfd *abfd,
 	if (result == NULL)
 	  return NULL;
 
-	fprintf (stderr,
-		 "DBG P9 AFTER CALLBACK: text_filepos=%lx data_filepos=%lx sym_filepos=%lx\n",
-		 (unsigned long) obj_textsec (abfd)->filepos,
-		 (unsigned long) obj_datasec (abfd)->filepos,
-		 (unsigned long) obj_sym_filepos (abfd));
-
+	/* The generic a.out callback recalculates section file positions and
+	   obj_sym_filepos using N_SYMOFF, which does not match the Plan 9
+	   executive layout.  Restore the correct Plan 9 positions:
+	   text immediately after the fixed-size header, data after text,
+	   and symbols after data.  */
 	obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
 	obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + execp->a_text;
 	obj_sym_filepos (abfd) = obj_datasec (abfd)->filepos + execp->a_data;
-
-	fprintf (stderr,
-		 "DBG P9 REAPPLY: text_filepos=%lx data_filepos=%lx sym_filepos=%lx\n",
-		 (unsigned long) obj_textsec (abfd)->filepos,
-		 (unsigned long) obj_datasec (abfd)->filepos,
-		 (unsigned long) obj_sym_filepos (abfd));
 
 	/* Now that the segment addresses have been worked out, take a better
 		guess at whether the file is executable.  If the entry point
@@ -919,13 +828,6 @@ putsym(bfd *abfd, int type, char *prefix, char *name, bfd_vma value)
 	int n;
 	char buf[5];
 
-	fprintf(stderr, "DBG P9 PUTSYM: type=%c prefix=%s name=%s value=%lx filepos=%lx\n",
-		type,
-		prefix ? prefix : "(null)",
-		name ? name : "(null)",
-		(unsigned long) value,
-		(unsigned long) obj_sym_filepos(abfd));
-
 	if(bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0)
 		return false;
 
@@ -964,297 +866,11 @@ MY(slurp_symbol_table) (bfd *abfd)
 	int i, n, nsyms;
 	asection *sec;
 
-	fprintf (stderr,
-	 "DBG P9 SLURP ENTER: flags=%lx exec=%d syms=%lx symfp=%lx\n",
-	 (unsigned long) abfd->flags,
-	 (abfd->flags & EXEC_P) != 0,
-	 (unsigned long) exec_hdr (abfd)->a_syms,
-	 (unsigned long) obj_sym_filepos (abfd));
-
 	/* been here, done that */
 	if (obj_aout_symbols (abfd) != NULL)
 		return true;
 
-		fprintf (stderr,
-			 "DBG P9 EXEC IF: flags=%lx exec=%d text=%lx cond=%d\n",
-			 (unsigned long) abfd->flags,
-			 (abfd->flags & EXEC_P) != 0,
-			 (unsigned long) exec_hdr (abfd)->a_text,
-			 ((abfd->flags & EXEC_P) != 0 && exec_hdr (abfd)->a_text != 0));
-
-		if (obj_sym_filepos (abfd) < EXEC_BYTES_SIZE + exec_hdr (abfd)->a_text + exec_hdr (abfd)->a_data)
-			{
-		struct external_nlist *esym;
-		struct external_nlist *esyms;
-		unsigned char *strtab;
-		bfd_size_type symcount;
-		bfd_size_type strsize;
-		file_ptr symoff;
-		file_ptr stroff;
-		bfd_size_type amt;
-
-		fprintf (stderr, "DBG P9 SLURP EXEC BRANCH\n");
-		//goto old_plan9_parser;
-
-		/* Do not trust obj_sym_filepos(abfd) here: it gets reset to ff0
-		   on reopen, while the real symbol table for the executable is
-		   after header + text + data.  */
-		symoff = obj_sym_filepos (abfd);
-
-		fprintf (stderr,
-			 "DBG P9 SLURP EXEC: symoff=%lx obj_sym_filepos=%lx a_syms=%lx\n",
-			 (unsigned long) symoff,
-			 (unsigned long) obj_sym_filepos (abfd),
-			 (unsigned long) exec_hdr (abfd)->a_syms);
-
-		if (exec_hdr (abfd)->a_syms == 0)
-			return true;
-
-		symcount = exec_hdr (abfd)->a_syms / sizeof (struct external_nlist);
-		if (symcount == 0)
-			return true;
-
-		stroff = EXEC_BYTES_SIZE + exec_hdr (abfd)->a_text + exec_hdr (abfd)->a_data + exec_hdr (abfd)->a_syms;
-
-		fprintf (stderr,
-			 "DBG P9 SLURP EXEC: sizeof(external_nlist)=%lu symcount=%lu str_off=%lx\n",
-			 (unsigned long) sizeof (struct external_nlist),
-			 (unsigned long) symcount,
-			 (unsigned long) stroff);
-
-		if ((abfd->flags & EXEC_P) == 0)
-			goto old_plan9_parser;
-
-		amt = symcount * sizeof (struct external_nlist);
-		esyms = (struct external_nlist *) bfd_malloc (amt);
-		if (esyms == NULL)
-			return false;
-
-		if (bfd_seek (abfd, symoff, SEEK_SET) != 0
-		    || bfd_bread ((PTR) esyms, amt, abfd) != amt)
-		{
-			free (esyms);
-			return false;
-		}
-
-		if (amt >= 24)
-			fprintf (stderr,
-				 "DBG P9 EXECSYMRAW: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-				 ((unsigned char *) esyms)[0],  ((unsigned char *) esyms)[1],
-				 ((unsigned char *) esyms)[2],  ((unsigned char *) esyms)[3],
-				 ((unsigned char *) esyms)[4],  ((unsigned char *) esyms)[5],
-				 ((unsigned char *) esyms)[6],  ((unsigned char *) esyms)[7],
-				 ((unsigned char *) esyms)[8],  ((unsigned char *) esyms)[9],
-				 ((unsigned char *) esyms)[10], ((unsigned char *) esyms)[11],
-				 ((unsigned char *) esyms)[12], ((unsigned char *) esyms)[13],
-				 ((unsigned char *) esyms)[14], ((unsigned char *) esyms)[15],
-				 ((unsigned char *) esyms)[16], ((unsigned char *) esyms)[17],
-				 ((unsigned char *) esyms)[18], ((unsigned char *) esyms)[19],
-				 ((unsigned char *) esyms)[20], ((unsigned char *) esyms)[21],
-				 ((unsigned char *) esyms)[22], ((unsigned char *) esyms)[23]);
-
-		{
-			char sbuf[4];
-
-			if (bfd_seek (abfd, stroff, SEEK_SET) != 0
-			    || bfd_bread ((PTR) sbuf, 4, abfd) != 4)
-			{
-				free (esyms);
-				return false;
-			}
-
-			strsize = bfd_h_get_32 (abfd, (PTR) sbuf);
-			if (strsize < 4)
-			{
-				free (esyms);
-				return false;
-			}
-		}
-
-		strtab = (unsigned char *) bfd_malloc (strsize);
-		if (strtab == NULL)
-		{
-			free (esyms);
-			return false;
-		}
-
-		memset (strtab, 0, strsize);
-
-		if (bfd_seek (abfd, stroff + 4, SEEK_SET) != 0
-		    || bfd_bread ((PTR) (strtab + 4), strsize - 4, abfd) != strsize - 4)
-		{
-			free (strtab);
-			free (esyms);
-			return false;
-		}
-
-		strtab[0] = '\0';
-
-		if (symcount > 0)
-		{
-			bfd_vma dbg_strx0;
-			unsigned int dbg_type0;
-
-			dbg_strx0 = GET_WORD (abfd, esyms[0].e_strx);
-			dbg_type0 = H_GET_8 (abfd, esyms[0].e_type);
-
-			fprintf (stderr,
-				 "DBG P9 EXEC RAW0: strx=%lx type=%x name=%s\n",
-				 (unsigned long) dbg_strx0,
-				 dbg_type0,
-				 (dbg_strx0 < strsize ? (char *) (strtab + dbg_strx0) : "(oor)"));
-		}
-
-		if (symcount > 1)
-		{
-			bfd_vma dbg_strx1;
-			unsigned int dbg_type1;
-
-			dbg_strx1 = GET_WORD (abfd, esyms[1].e_strx);
-			dbg_type1 = H_GET_8 (abfd, esyms[1].e_type);
-
-			fprintf (stderr,
-				 "DBG P9 EXEC RAW1: strx=%lx type=%x name=%s\n",
-				 (unsigned long) dbg_strx1,
-				 dbg_type1,
-				 (dbg_strx1 < strsize ? (char *) (strtab + dbg_strx1) : "(oor)"));
-		}
-
-		if (symcount > 2)
-		{
-			bfd_vma dbg_strx2;
-			unsigned int dbg_type2;
-
-			dbg_strx2 = GET_WORD (abfd, esyms[2].e_strx);
-			dbg_type2 = H_GET_8 (abfd, esyms[2].e_type);
-
-			fprintf (stderr,
-				 "DBG P9 EXEC RAW2: strx=%lx type=%x name=%s\n",
-				 (unsigned long) dbg_strx2,
-				 dbg_type2,
-				 (dbg_strx2 < strsize ? (char *) (strtab + dbg_strx2) : "(oor)"));
-		}
-
-		cached_size = symcount * sizeof (aout_symbol_type);
-		cached = (aout_symbol_type *) bfd_malloc (cached_size);
-		if (cached == NULL)
-		{
-			free (strtab);
-			free (esyms);
-			return false;
-		}
-		memset (cached, 0, cached_size);
-
-		if (! NAME (aout, translate_symbol_table)
-		      (abfd, cached, esyms, symcount, (char *) strtab, strsize, FALSE))
-		{
-			free (cached);
-			free (strtab);
-			free (esyms);
-			return false;
-		}
-
-		bfd_get_symcount (abfd) = symcount;
-		obj_aout_external_sym_count (abfd) = symcount;
-		obj_aout_symbols (abfd) = cached;
-		obj_aout_external_syms (abfd) = esyms;
-		obj_aout_external_strings (abfd) = (char *) strtab;
-		obj_aout_external_string_size (abfd) = strsize;
-
-		return true;
-
-#if 0
-		for (i = 0, esym = esyms; i < (int) symcount; i++, esym++)
-		{
-			const char *nm;
-			unsigned char type;
-			bfd_vma value;
-			bfd_vma strx;
-
-			cached[i].symbol.the_bfd = abfd;
-			cached[i].symbol.flags = 0;
-			cached[i].symbol.section = bfd_und_section_ptr;
-			cached[i].symbol.name = NULL;
-
-			value = GET_WORD (abfd, esym->e_value);
-			type = H_GET_8 (abfd, esym->e_type);
-			strx = GET_WORD (abfd, esym->e_strx);
-
-			cached[i].symbol.value = value;
-
-			if (strx >= 4 && strx < strsize)
-				nm = (const char *) (strtab + strx);
-			else
-				nm = "";
-
-			cached[i].symbol.name = strdup (nm);
-			if (cached[i].symbol.name == NULL)
-			{
-				free (cached);
-				free (strtab);
-				free (esyms);
-				return false;
-			}
-
-			switch (type & N_TYPE)
-			{
-			case N_TEXT:
-				cached[i].symbol.section = obj_textsec (abfd);
-				cached[i].symbol.value -= obj_textsec (abfd)->vma;
-				break;
-
-			case N_DATA:
-				cached[i].symbol.section = obj_datasec (abfd);
-				cached[i].symbol.value -= obj_datasec (abfd)->vma;
-				break;
-
-			case N_BSS:
-				cached[i].symbol.section = obj_bsssec (abfd);
-				cached[i].symbol.value -= obj_bsssec (abfd)->vma;
-				break;
-
-			case N_ABS:
-				cached[i].symbol.section = bfd_abs_section_ptr;
-				break;
-
-			default:
-				cached[i].symbol.section = bfd_und_section_ptr;
-				break;
-			}
-
-			if (type & N_EXT)
-				cached[i].symbol.flags |= BSF_GLOBAL;
-
-			// Very noisy - disabled.
-			//fprintf (stderr,
-			//	 "DBG P9 EXEC SYM[%d]: type=%x strx=%lx name=%s value=%lx sec=%s\n",
-			//	 i,
-			//	 (unsigned int) type,
-			//	 (unsigned long) strx,
-			//	 cached[i].symbol.name ? cached[i].symbol.name : "(null)",
-			//	 (unsigned long) cached[i].symbol.value,
-			//	 cached[i].symbol.section ? cached[i].symbol.section->name : "(null)");
-		}
-
-		bfd_get_symcount (abfd) = symcount;
-#endif
-		obj_aout_external_sym_count (abfd) = symcount;
-		obj_aout_symbols (abfd) = cached;
-
-		free (strtab);
-		free (esyms);
-		return true;
-	}
-
-old_plan9_parser:
 	n = exec_hdr (abfd)->a_syms;
-	fprintf (stderr,
-		 "DBG P9 SLURP: a_syms=%x sym_filepos=%lx text=%lx data=%lx bss=%lx\n",
-		 n,
-		 (unsigned long) obj_sym_filepos (abfd),
-		 (unsigned long) obj_textsec (abfd)->vma,
-		 (unsigned long) obj_datasec (abfd)->vma,
-		 (unsigned long) obj_bsssec (abfd)->vma);
 	if (n == 0)
 		return true;
 
@@ -1262,199 +878,67 @@ old_plan9_parser:
 	if (syms == NULL)
 		return false;
 
-	fprintf (stderr,
-		 "DBG P9 SLURP SEEK: sym_filepos=%lx a_syms=%x\n",
-		 (unsigned long) obj_sym_filepos (abfd),
-		 n);
-
-	fprintf (stderr,
-		 "DBG P9 OLD READOFF: off=%lx\n",
-		 (unsigned long) (EXEC_BYTES_SIZE + exec_hdr (abfd)->a_text + exec_hdr (abfd)->a_data));
-
-	{
-		unsigned char probe[128];
-		int j;
-
-		if (bfd_seek (abfd, 0x2000, SEEK_SET) == 0
-		    && bfd_bread ((PTR) probe, sizeof (probe), abfd) == sizeof (probe))
-		{
-			fprintf (stderr, "DBG P9 PROBE2000:");
-			for (j = 0; j < 128; j++)
-			{
-				if ((j % 16) == 0)
-					fprintf (stderr, "\n%04x:", 0x2000 + j);
-				fprintf (stderr, " %02x", probe[j]);
-			}
-			fprintf (stderr, "\n");
-		}
-	}
-
-	{
-		unsigned char probe[96];
-		int j;
-
-		if (bfd_seek (abfd, 0x20d0, SEEK_SET) == 0
-		    && bfd_bread ((PTR) probe, sizeof (probe), abfd) == sizeof (probe))
-		{
-			fprintf (stderr, "DBG P9 PROBE20D0:");
-			for (j = 0; j < 96; j++)
-			{
-				if ((j % 16) == 0)
-					fprintf (stderr, "\n%04x:", 0x20d0 + j);
-				fprintf (stderr, " %02x", probe[j]);
-			}
-			fprintf (stderr, "\nDBG P9 PROBE20D0 ASCII:\n");
-			for (j = 0; j < 96; j++)
-			{
-				if ((j % 16) == 0)
-					fprintf (stderr, "%04x: ", 0x20d0 + j);
-				fputc ((probe[j] >= 32 && probe[j] < 127) ? probe[j] : '.', stderr);
-				if ((j % 16) == 15)
-					fputc ('\n', stderr);
-			}
-		}
-	}
-
-//	if (bfd_seek (abfd, 0x20d0, SEEK_SET) != 0
-//	    || bfd_bread ((PTR) syms, n, abfd) != n)
-//	{
-//		free (syms);
-//		return false;
-//	}
-
-	{
-		unsigned char tail[32];
-		int j;
-
-	if (bfd_seek (abfd, 0x20ec, SEEK_SET) != 0
+	/* Read the Plan 9 inline symbol stream from its correct file position.
+	   For Plan 9 0x1eb executables, obj_sym_filepos is set (and restored after
+	   the generic a.out callback) to EXEC_BYTES_SIZE + a_text + a_data.  */
+	if (bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0
 	    || bfd_bread ((PTR) syms, n, abfd) != n)
-		{
-			fprintf (stderr, "DBG P9 TAILRAW:");
-			for (j = 0; j < 32; j++)
-				fprintf (stderr, " %02x", tail[j]);
-			fprintf (stderr, "\n");
-
-			fprintf (stderr, "DBG P9 TAILASCII: ");
-			for (j = 0; j < 32; j++)
-				fputc ((tail[j] >= 32 && tail[j] < 127) ? tail[j] : '.', stderr);
-			fprintf (stderr, "\n");
-		}
-	}
-
-	if (n >= 24)
-		fprintf (stderr,
-			 "DBG P9 SYMRAW: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-			 syms[0], syms[1], syms[2], syms[3],
-			 syms[4], syms[5], syms[6], syms[7],
-			 syms[8], syms[9], syms[10], syms[11],
-			 syms[12], syms[13], syms[14], syms[15],
-			 syms[16], syms[17], syms[18], syms[19],
-			 syms[20], syms[21], syms[22], syms[23]);
-
 	{
-		int j;
-
-		fprintf (stderr, "DBG P9 SYMASCII: ");
-		if (n >= 24)
-			fprintf (stderr,
-				 "\nDBG P9 OLD16: %04x %04x %04x %04x %04x %04x %04x %04x %04x %04x %04x %04x\n",
-				 ((unsigned int) syms[0] << 8) | syms[1],
-				 ((unsigned int) syms[2] << 8) | syms[3],
-				 ((unsigned int) syms[4] << 8) | syms[5],
-				 ((unsigned int) syms[6] << 8) | syms[7],
-				 ((unsigned int) syms[8] << 8) | syms[9],
-				 ((unsigned int) syms[10] << 8) | syms[11],
-				 ((unsigned int) syms[12] << 8) | syms[13],
-				 ((unsigned int) syms[14] << 8) | syms[15],
-				 ((unsigned int) syms[16] << 8) | syms[17],
-				 ((unsigned int) syms[18] << 8) | syms[19],
-				 ((unsigned int) syms[20] << 8) | syms[21],
-				 ((unsigned int) syms[22] << 8) | syms[23]);
-
-		for (j = 0; j < n; j++)
-		{
-			unsigned char c = syms[j];
-			if (c >= 32 && c <= 126)
-				fputc (c, stderr);
-			else
-				fputc ('.', stderr);
-		}
-		fputc ('\n', stderr);
+		free (syms);
+		return false;
 	}
 
 	p = syms;
 	ep = syms + n;
 	nsyms = 0;
 
-	if ((n % 12) == 0)
+	/* Count symbols by scanning the variable-length Plan 9 stream.
+	   Each record: 4-byte big-endian value, 1-byte type (with 0x80 OR'd),
+	   NUL-terminated name.  */
+	while (p < ep)
 	{
-		nsyms = n / 12;
-		fprintf (stderr, "DBG P9 OLD FIXED12: nsyms=%d\n", nsyms);
-	}
-	else
-	{
-		while (p < ep)
-		{
-			/* Need at least 4-byte value + 1-byte type.  */
-			if (ep - p < 5)
-			{
-				fprintf (stderr,
-					 "DBG P9 OLD FAIL1: remaining=%ld n=%d\n",
-					 (long) (ep - p), n);
-				free (syms);
-				return false;
-			}
+		/* Need at least value (4) + type (1) bytes.  */
+		if (ep - p < 5)
+			break;
 
-			p += 5;
+		p += 5;
 
-			while (p < ep && *p != '\0')
-				p++;
-
-			if (p >= ep)
-			{
-				fprintf (stderr,
-					 "DBG P9 OLD FAIL2: hit end while scanning name, off=%ld n=%d\n",
-					 (long) (p - syms), n);
-				free (syms);
-				return false;
-			}
-
-			/* Skip terminating NUL.  */
+		/* Advance past the name.  */
+		while (p < ep && *p != '\0')
 			p++;
-			nsyms++;
-		}
-	}
 
-	fprintf (stderr, "DBG P9 SLURP COUNT: nsyms=%d\n", nsyms);
+		if (p >= ep)
+		{
+			/* Symbol stream ends without a NUL terminator for this symbol.
+			   This indicates the data is either truncated or malformed.
+			   Stop counting here; the symbols counted so far are valid
+			   and will be returned by the subsequent parsing pass.  */
+			break;
+		}
+
+		/* Skip the NUL terminator.  */
+		p++;
+		nsyms++;
+	}
 
 	bfd_get_symcount (abfd) = nsyms;
 	obj_aout_external_sym_count (abfd) = nsyms;
 
+	if (nsyms == 0)
+	{
+		obj_aout_symbols (abfd) = NULL;
+		free (syms);
+		return true;
+	}
+
 	cached_size = nsyms * sizeof (aout_symbol_type);
 	cached = (aout_symbol_type *) bfd_malloc (cached_size);
-	if (cached == NULL && cached_size != 0)
+	if (cached == NULL)
 	{
 		free (syms);
 		return false;
 	}
-
-	if (cached_size != 0)
-		memset (cached, 0, cached_size);
-
-	if ((n % 12) == 0)
-	{
-		for (i = 0; i < nsyms; i++)
-		{
-			unsigned char *q = syms + i * 12;
-
-			fprintf (stderr,
-				 "DBG P9 OBJ12[%d]: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-				 i,
-				 q[0], q[1], q[2], q[3], q[4], q[5],
-				 q[6], q[7], q[8], q[9], q[10], q[11]);
-		}
-
-	}
+	memset (cached, 0, cached_size);
 
 	p = syms;
 	for (i = 0; i < nsyms; i++)
@@ -1462,11 +946,7 @@ old_plan9_parser:
 		unsigned char stype;
 
 		if (ep - p < 5)
-		{
-			free (cached);
-			free (syms);
-			return false;
-		}
+			break;
 
 		cached[i].symbol.the_bfd = abfd;
 		cached[i].symbol.value = bfd_h_get_32 (abfd, p);
@@ -1474,6 +954,7 @@ old_plan9_parser:
 		cached[i].symbol.flags = 0;
 		cached[i].symbol.section = bfd_und_section_ptr;
 
+		/* Type byte: Plan 9 linker OR-s 0x80 into the type; strip it.  */
 		stype = (unsigned char) (p[4] & ~0x80);
 
 		name = p + 5;
@@ -1481,11 +962,7 @@ old_plan9_parser:
 			name++;
 
 		if (name >= ep)
-		{
-			free (cached);
-			free (syms);
-			return false;
-		}
+			break;
 
 		cached[i].symbol.name = strdup ((char *) (p + 5));
 		if (cached[i].symbol.name == NULL)
@@ -1544,15 +1021,6 @@ old_plan9_parser:
 		    || sec == obj_bsssec (abfd))
 			cached[i].symbol.value -= sec->vma;
 
-		fprintf (stderr,
-			 "DBG P9 SLURP SYM[%d]: type=%c name=%s value=%lx sec=%s sec_vma=%lx\n",
-			 i,
-			 (char) stype,
-			 cached[i].symbol.name ? cached[i].symbol.name : "(null)",
-			 (unsigned long) cached[i].symbol.value,
-			 cached[i].symbol.section ? cached[i].symbol.section->name : "(null)",
-			 (unsigned long) (cached[i].symbol.section ? cached[i].symbol.section->vma : 0));
-
 		p = name + 1;
 	}
 
@@ -1591,8 +1059,6 @@ plan9_i386_get_symtab_upper_bound (bfd *abfd)
      bfd *abfd;
 */
 {
-	fprintf (stderr, "DBG P9 UPPER ENTER\n");
-
 	if (!MY(slurp_symbol_table)(abfd))
 		return -1;
 
@@ -1606,22 +1072,13 @@ plan9_i386_canonicalize_symtab (bfd *abfd, asymbol **location)
 	int i;
 	aout_symbol_type *s;
 
-	fprintf (stderr, "DBG P9 CANON ENTER\n");
-
 	if (!MY(slurp_symbol_table) (abfd))
 		return -1;
-
-	fprintf (stderr, "DBG P9 CANON AFTER SLURP ok=%d count=%ld\n",
-	 obj_aout_symbols (abfd) != NULL,
-	 (long) bfd_get_symcount (abfd));
 
 	s = obj_aout_symbols (abfd);
 	for (i = 0; i < (int) bfd_get_symcount (abfd); i++)
 		*(location++) = (asymbol *) (s++);
 	*location++ = 0;
-
-	fprintf (stderr, "DBG P9 CANON DONE: count=%ld\n",
-		 (long) bfd_get_symcount (abfd));
 
 	return bfd_get_symcount (abfd);
 }
@@ -1634,8 +1091,6 @@ plan9_i386_read_minisymbols (bfd *abfd, bfd_boolean dynamic,
 	long storage;
 	asymbol **syms;
 	long count;
-
-	fprintf (stderr, "DBG P9 READ_MINISYMS ENTER dynamic=%d\n", dynamic);
 
 	if (dynamic)
 		return -1;
@@ -1657,8 +1112,6 @@ plan9_i386_read_minisymbols (bfd *abfd, bfd_boolean dynamic,
 
 	*minisymsp = syms;
 	*sizep = sizeof (asymbol *);
-
-	fprintf (stderr, "DBG P9 READ_MINISYMS DONE count=%ld\n", count);
 
 	return count;
 }
