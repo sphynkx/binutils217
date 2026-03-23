@@ -512,28 +512,16 @@ MY(write_object_contents) (bfd *abfd)
 			}
 		}
 
-		/* Plan 9 i386 executables: header magic 0x1eb, big-endian fields.
-		   IMPORTANT: a_text must describe the *gap* from text base (0x1020)
-		   to data base (0x2000), not a page-rounded text size, otherwise the
-		   loader will place data/bss at the wrong address.  */
+		  /* Plan 9 i386 executables: header magic 0x1eb, big-endian fields.
+		   a_text is the actual text byte count; the reader uses
+		   EXEC_BYTES_SIZE + a_text + a_data to locate the symbol table.  */
 
 		if (bfd_get_arch (abfd) == bfd_arch_i386)
 		  {
 			/* Plan 9 exec magic for i386.  */
 			execp->a_info = 0x1eb;
 
-			/* Make header sizes consistent with fixed VMAs.  */
-			if (obj_textsec (abfd) != NULL && obj_datasec (abfd) != NULL)
-			  {
-				bfd_vma text_vma = obj_textsec (abfd)->vma;
-				bfd_vma data_vma = obj_datasec (abfd)->vma;
-
-				if (text_vma != 0 && data_vma > text_vma)
-				  execp->a_text = (bfd_vma) (data_vma - text_vma);
-				else
-				  execp->a_text = obj_textsec (abfd)->size;
-			  }
-			else if (obj_textsec (abfd) != NULL)
+			if (obj_textsec (abfd) != NULL)
 			  execp->a_text = obj_textsec (abfd)->size;
 
 			execp->a_data = (obj_datasec (abfd) != NULL) ? obj_datasec (abfd)->size : 0;
@@ -812,6 +800,8 @@ MY (object_p) (bfd *abfd)
     return 0;
 
   target = NAME (aout, some_aout_object_p) (abfd, &exec, MY (callback));
+  if (target != NULL && N_MAGIC (exec) == OMAGIC)
+    abfd->flags &= ~EXEC_P;
   return target;
 }
 
