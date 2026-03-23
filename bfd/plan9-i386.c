@@ -532,17 +532,9 @@ MY(write_object_contents) (bfd *abfd)
 			execp->a_info = 0; /* fallback */
 		  }
 
-	{
-		unsigned long sym_filepos;
-		unsigned long symoff;
-
-		sym_filepos = (unsigned long) obj_sym_filepos (abfd);
-		symoff = (unsigned long) (EXEC_BYTES_SIZE + execp->a_text + execp->a_data);
-		/* sym_filepos is advanced past all written symbols by the linker.
-		   It should always be >= symoff, but guard against underflow from
-		   a zero/unset filepos (e.g. no symbols or partial link).  */
-		execp->a_syms = (sym_filepos > symoff) ? (sym_filepos - symoff) : 0;
-	}
+	if (obj_aout_external_sym_count (abfd) != 0)
+	  execp->a_syms = (obj_aout_external_sym_count (abfd)
+			   * sizeof (struct external_nlist));
 
 	execp->a_trsize = 0;
 	execp->a_drsize = 0;

@@ -2361,6 +2361,25 @@ MY (final_link) (bfd *abfd,
   obj_datasec (abfd)->rel_filepos = finfo.dreloff;
   obj_sym_filepos (abfd) = finfo.symoff;
 
+  /* Plan 9 i386 executables keep the on-disk image contiguous:
+     header | text bytes | data bytes | relocs | symbols | strings.
+     The generic a.out sizing path leaves page-aligned gaps in the file,
+     which makes the produced 0x1eb executable header disagree with where
+     the linker actually writes symbols and strings.  */
+  if (!info->relocatable
+      && bfd_get_arch (abfd) == bfd_arch_i386)
+    {
+      obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
+      obj_datasec (abfd)->filepos = (obj_textsec (abfd)->filepos
+				     + obj_textsec (abfd)->size);
+      finfo.treloff = obj_datasec (abfd)->filepos + obj_datasec (abfd)->size;
+      finfo.dreloff = finfo.treloff + exec_hdr (abfd)->a_trsize;
+      finfo.symoff = finfo.dreloff + exec_hdr (abfd)->a_drsize;
+      obj_textsec (abfd)->rel_filepos = finfo.treloff;
+      obj_datasec (abfd)->rel_filepos = finfo.dreloff;
+      obj_sym_filepos (abfd) = finfo.symoff;
+    }
+
   /* We keep a count of the symbols as we output them.  */
   obj_aout_external_sym_count (abfd) = 0;
 
