@@ -854,6 +854,24 @@ putsym(bfd *abfd, int type, char *prefix, char *name, bfd_vma value)
 }
 
 
+/* Skip the 2-byte big-endian pair suffix in Plan 9 'z'/'Z' (AHISTORY)
+   symbol-table records.  After the NUL-terminated file name, the linker
+   appends pairs of big-endian 2-byte values terminated by 0x0000.  Return
+   the updated pointer (pointing one past the terminator pair, or ep if the
+   terminator was not found before end-of-data).  */
+static unsigned char *
+plan9_skip_zrec_suffix (unsigned char *p, unsigned char *ep)
+{
+  while (p + 2 <= ep)
+    {
+      unsigned int pair = bfd_getb16 ((PTR) p);
+      p += 2;
+      if (pair == 0)
+        break;
+    }
+  return p;
+}
+
 static boolean
 MY(slurp_symbol_table) (bfd *abfd)
 /*
@@ -929,13 +947,7 @@ MY(slurp_symbol_table) (bfd *abfd)
 		   a 0x0000 pair.  Skip this suffix and don't count z/Z as symbols.  */
 		if (stype == 'z' || stype == 'Z')
 		{
-			while (p + 2 <= ep)
-			{
-				unsigned int pair = ((unsigned int) p[0] << 8) | p[1];
-				p += 2;
-				if (pair == 0)
-					break;
-			}
+			p = plan9_skip_zrec_suffix (p, ep);
 			continue;  /* z/Z records are not nm symbols */
 		}
 
@@ -991,14 +1003,7 @@ MY(slurp_symbol_table) (bfd *abfd)
 		if (stype == 'z' || stype == 'Z')
 		{
 			p = name + 1;
-			/* Skip 2-byte pairs suffix.  */
-			while (p + 2 <= ep)
-			{
-				unsigned int pair = ((unsigned int) p[0] << 8) | p[1];
-				p += 2;
-				if (pair == 0)
-					break;
-			}
+			p = plan9_skip_zrec_suffix (p, ep);
 			continue;
 		}
 
