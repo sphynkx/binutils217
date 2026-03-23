@@ -702,29 +702,30 @@ some_plan9_object_p (bfd *abfd,
 	if (result == NULL)
 	  return NULL;
 
-	/* The generic a.out callback recalculates section file positions and
+  /* The generic a.out callback recalculates section file positions and
 	   obj_sym_filepos using N_SYMOFF, which does not match the Plan 9
 	   executive layout.  Restore the correct Plan 9 positions:
 	   text immediately after the fixed-size header, data after text,
 	   and symbols after data.  */
-	obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
-	obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + execp->a_text;
-	obj_sym_filepos (abfd) = obj_datasec (abfd)->filepos + execp->a_data;
+  obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
+  obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + execp->a_text;
+  obj_sym_filepos (abfd) = obj_datasec (abfd)->filepos + execp->a_data;
+  obj_str_filepos (abfd) = obj_sym_filepos (abfd) + execp->a_syms;
 
-	/* Now that the segment addresses have been worked out, take a better
-		guess at whether the file is executable.  If the entry point
-		is within the text segment, assume it is.  (This makes files
-		executable even if their entry point address is 0, as long as
-		their text starts at zero.).
+  /* Now that the segment addresses have been worked out, take a better
+     guess at whether the file is executable.  If the entry point
+     is within the text segment, assume it is.  (This makes files
+     executable even if their entry point address is 0, as long as
+     their text starts at zero.).
 
-		This test had to be changed to deal with systems where the text segment
-		runs at a different location than the default.  The problem is that the
-		entry address can appear to be outside the text segment, thus causing an
-		erroneous conclusion that the file isn't executable.
+     This test had to be changed to deal with systems where the text segment
+     runs at a different location than the default.  The problem is that the
+     entry address can appear to be outside the text segment, thus causing an
+     erroneous conclusion that the file isn't executable.
 
-		To fix this, we now accept any non-zero entry point as an indication of
-		executability.  This will work most of the time, since only the linker
-		sets the entry point, and that is likely to be non-zero for most systems.  */
+     To fix this, we now accept any non-zero entry point as an indication of
+     executability.  This will work most of the time, since only the linker
+     sets the entry point, and that is likely to be non-zero for most systems.  */
 
 	if (execp->a_entry != 0
 		|| (execp->a_entry >= obj_textsec(abfd)->vma
@@ -833,6 +834,38 @@ plan9_skip_zrec_suffix (unsigned char *p, unsigned char *ep)
   return p;
 }
 
+/* Return non-zero if the first record in DATA..EP looks like a Plan 9
+   inline symbol record rather than an a.out external_nlist entry.
+   Plan 9 inline records begin with:
+     4-byte value | 1-byte type | NUL-terminated inline name
+   The type byte is alphabetic ('T', 't', 'D', 'd', 'B', 'b', 'f', 'm',
+   'p', 'a', 'z', ...), and non-z/Z records have a non-empty inline name.
+   external_nlist entries do not match that layout: byte 4 is n_type
+   (small numeric flags), not an alphabetic symbol code.  */
+static boolean
+plan9_inline_symbol_p (unsigned char *data, unsigned char *ep)
+{
+  unsigned char stype;
+  unsigned char *name;
+
+  if (ep - data < 6)
+    return false;
+
+  stype = data[4] & ~0x80;
+  if (! ((stype >= 'A' && stype <= 'Z')
+	 || (stype >= 'a' && stype <= 'z')))
+    return false;
+
+  name = data + 5;
+  while (name < ep && *name != '\0')
+    name++;
+
+  if (name >= ep)
+    return false;
+
+  return (stype == 'z' || stype == 'Z' || name > data + 5);
+}
+
 static boolean
 MY(slurp_symbol_table) (bfd *abfd)
 /*
@@ -853,47 +886,39 @@ MY(slurp_symbol_table) (bfd *abfd)
 	if (n == 0)
 		return true;
 
-	/* Determine the symbol-table format before reading the full table.
-	   Two formats exist in practice:
-	   (a) Plan 9 native inline format (used by 8l and 8a):
-	         4-byte big-endian value | 1-byte type (OR 0x80) | NUL-terminated name
-	       The type byte always has bit 7 set (>= 0x80).
-	   (b) Standard a.out external_nlist + string-table format (used by GNU as/ld):
-	         Each entry is sizeof(struct external_nlist)==12 bytes; n_type < 0x80.
-	   Discriminate by peeking at byte[4] of the first record: if bit 7 is
-	   clear AND a_syms is an exact multiple of sizeof(struct external_nlist),
-	   the table is in external_nlist format.  */
-	if ((bfd_size_type) n >= sizeof (struct external_nlist)
+	/* Read the raw symbol bytes first.  Most Plan 9 files use the native
+	   inline symbol stream:
+	     4-byte big-endian value | 1-byte type | NUL-terminated inline name
+	   Some checked-in OMAGIC fixtures (e.g. reloc_test.o) use ordinary
+	   a.out external_nlist + string-table layout instead.  Prefer the
+	   inline format when the bytes actually look like inline records, and
+	   only fall back to external_nlist when they do not.  */
+	syms = (unsigned char *) bfd_malloc (n);
+	if (syms == NULL)
+		return false;
+
+	if (bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0
+	    || bfd_bread ((PTR) syms, n, abfd) != n)
+	{
+		free (syms);
+		return false;
+	}
+
+	if (! plan9_inline_symbol_p (syms, syms + n)
+	    && (bfd_size_type) n >= sizeof (struct external_nlist)
 	    && (bfd_size_type) n % sizeof (struct external_nlist) == 0)
 	{
-		unsigned char peek[5];
+		struct external_nlist *esyms;
 
-		if (bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) == 0
-		    && bfd_bread ((PTR) peek, (bfd_size_type) 5, abfd) == 5
-		    && !(peek[4] & 0x80))
+		esyms = (struct external_nlist *) syms;
+
 		{
 			/* external_nlist + string-table format.
-			   Read the nlist entries manually (aout_get_external_symbols is
-			   static in aoutx.h and not visible here), then use the public
-			   NAME(aout, translate_symbol_table) to convert them.  */
+			   Read the string table and use the public
+			   NAME(aout, translate_symbol_table) to convert it.  */
 			bfd_size_type symcount = n / sizeof (struct external_nlist);
-			struct external_nlist *esyms;
 			unsigned char *strtab;
 			bfd_size_type strsize;
-			bfd_size_type amt;
-
-			/* Read external_nlist entries. */
-			amt = (bfd_size_type) n;
-			esyms = (struct external_nlist *) bfd_malloc (amt);
-			if (esyms == NULL)
-				return false;
-
-			if (bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0
-			    || bfd_bread ((PTR) esyms, amt, abfd) != amt)
-			{
-				free (esyms);
-				return false;
-			}
 
 			/* Read string table: 4-byte size header + string data.
 			   Allocate size+1 bytes; zero [0..3] so that n_strx==0 yields
@@ -904,7 +929,7 @@ MY(slurp_symbol_table) (bfd *abfd)
 				if (bfd_seek (abfd, obj_str_filepos (abfd), SEEK_SET) != 0
 				    || bfd_bread ((PTR) sbuf, (bfd_size_type) 4, abfd) != 4)
 				{
-					free (esyms);
+					free (syms);
 					return false;
 				}
 				strsize = bfd_h_get_32 (abfd, (PTR) sbuf);
@@ -912,14 +937,14 @@ MY(slurp_symbol_table) (bfd *abfd)
 
 			if (strsize < 4)
 			{
-				free (esyms);
+				free (syms);
 				return false;
 			}
 
 			strtab = (unsigned char *) bfd_malloc (strsize + 1);
 			if (strtab == NULL)
 			{
-				free (esyms);
+				free (syms);
 				return false;
 			}
 			memset (strtab, 0, 4);  /* n_strx==0 -> empty string */
@@ -929,7 +954,7 @@ MY(slurp_symbol_table) (bfd *abfd)
 					  strsize - 4, abfd) != strsize - 4)
 			{
 				free (strtab);
-				free (esyms);
+				free (syms);
 				return false;
 			}
 			strtab[strsize] = '\0';
@@ -939,7 +964,7 @@ MY(slurp_symbol_table) (bfd *abfd)
 			if (cached == NULL)
 			{
 				free (strtab);
-				free (esyms);
+				free (syms);
 				return false;
 			}
 			memset (cached, 0, cached_size);
@@ -950,7 +975,7 @@ MY(slurp_symbol_table) (bfd *abfd)
 			{
 				free (cached);
 				free (strtab);
-				free (esyms);
+				free (syms);
 				return false;
 			}
 
@@ -964,24 +989,14 @@ MY(slurp_symbol_table) (bfd *abfd)
 		}
 	}
 
-	/* Plan 9 inline format: read the full symbol stream.
-	   For Plan 9 0x1eb executables, obj_sym_filepos is set (and restored
-	   after the generic a.out callback) to EXEC_BYTES_SIZE + a_text + a_data.
-	   Each record: 4-byte big-endian value | 1-byte type (OR 0x80) |
-	                NUL-terminated name.
-	   Exception: 'z'/'Z' (AHISTORY) records carry an extra suffix of big-endian
-	   2-byte pairs terminated by 0x0000 after the NUL-terminated name.  */
-	syms = (unsigned char *) bfd_malloc (n);
-	if (syms == NULL)
-		return false;
-
-	if (bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0
-	    || bfd_bread ((PTR) syms, n, abfd) != n)
-	{
-		free (syms);
-		return false;
-	}
-
+	/* Plan 9 inline format: use the bytes we already read from
+	   obj_sym_filepos(abfd).  For Plan 9 0x1eb executables, obj_sym_filepos
+	   is restored after the generic a.out callback to
+	   EXEC_BYTES_SIZE + a_text + a_data.
+	   Each record: 4-byte big-endian value | 1-byte type | NUL-terminated
+	   name.
+	   Exception: 'z'/'Z' (AHISTORY) records carry an extra suffix of
+	   big-endian 2-byte pairs terminated by 0x0000 after the name.  */
 	p = syms;
 	ep = syms + n;
 	nsyms = 0;
@@ -1296,4 +1311,3 @@ const bfd_target MY(vec) =
 
   (PTR) MY_backend_data
 };
-
