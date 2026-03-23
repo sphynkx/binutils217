@@ -204,7 +204,7 @@ plan9_i386_slurp_armap (bfd *abfd)
       mapdata = (struct areltdata *) _bfd_read_ar_hdr (abfd);
       if (mapdata == NULL)
         {
-          /* Header unreadable – treat this as wrong format.  */
+          /* Header unreadable -- treat this as wrong format.  */
           bfd_set_error (bfd_error_wrong_format);
           return FALSE;
         }
@@ -853,13 +853,128 @@ MY(slurp_symbol_table) (bfd *abfd)
 	if (n == 0)
 		return true;
 
+	/* Determine the symbol-table format before reading the full table.
+	   Two formats exist in practice:
+	   (a) Plan 9 native inline format (used by 8l and 8a):
+	         4-byte big-endian value | 1-byte type (OR 0x80) | NUL-terminated name
+	       The type byte always has bit 7 set (>= 0x80).
+	   (b) Standard a.out external_nlist + string-table format (used by GNU as/ld):
+	         Each entry is sizeof(struct external_nlist)==12 bytes; n_type < 0x80.
+	   Discriminate by peeking at byte[4] of the first record: if bit 7 is
+	   clear AND a_syms is an exact multiple of sizeof(struct external_nlist),
+	   the table is in external_nlist format.  */
+	if ((bfd_size_type) n >= sizeof (struct external_nlist)
+	    && (bfd_size_type) n % sizeof (struct external_nlist) == 0)
+	{
+		unsigned char peek[5];
+
+		if (bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) == 0
+		    && bfd_bread ((PTR) peek, (bfd_size_type) 5, abfd) == 5
+		    && !(peek[4] & 0x80))
+		{
+			/* external_nlist + string-table format.
+			   Read the nlist entries manually (aout_get_external_symbols is
+			   static in aoutx.h and not visible here), then use the public
+			   NAME(aout, translate_symbol_table) to convert them.  */
+			bfd_size_type symcount = n / sizeof (struct external_nlist);
+			struct external_nlist *esyms;
+			unsigned char *strtab;
+			bfd_size_type strsize;
+			bfd_size_type amt;
+
+			/* Read external_nlist entries. */
+			amt = (bfd_size_type) n;
+			esyms = (struct external_nlist *) bfd_malloc (amt);
+			if (esyms == NULL)
+				return false;
+
+			if (bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0
+			    || bfd_bread ((PTR) esyms, amt, abfd) != amt)
+			{
+				free (esyms);
+				return false;
+			}
+
+			/* Read string table: 4-byte size header + string data.
+			   Allocate size+1 bytes; zero [0..3] so that n_strx==0 yields
+			   an empty string; read string payload into [4..strsize-1].  */
+			{
+				unsigned char sbuf[4];
+
+				if (bfd_seek (abfd, obj_str_filepos (abfd), SEEK_SET) != 0
+				    || bfd_bread ((PTR) sbuf, (bfd_size_type) 4, abfd) != 4)
+				{
+					free (esyms);
+					return false;
+				}
+				strsize = bfd_h_get_32 (abfd, (PTR) sbuf);
+			}
+
+			if (strsize < 4)
+			{
+				free (esyms);
+				return false;
+			}
+
+			strtab = (unsigned char *) bfd_malloc (strsize + 1);
+			if (strtab == NULL)
+			{
+				free (esyms);
+				return false;
+			}
+			memset (strtab, 0, 4);  /* n_strx==0 -> empty string */
+
+			if (bfd_seek (abfd, obj_str_filepos (abfd) + 4, SEEK_SET) != 0
+			    || bfd_bread ((PTR) (strtab + 4),
+					  strsize - 4, abfd) != strsize - 4)
+			{
+				free (strtab);
+				free (esyms);
+				return false;
+			}
+			strtab[strsize] = '\0';
+
+			cached_size = symcount * sizeof (aout_symbol_type);
+			cached = (aout_symbol_type *) bfd_malloc (cached_size);
+			if (cached == NULL)
+			{
+				free (strtab);
+				free (esyms);
+				return false;
+			}
+			memset (cached, 0, cached_size);
+
+			if (! NAME (aout, translate_symbol_table)
+			      (abfd, cached, esyms, symcount,
+			       (char *) strtab, strsize, FALSE))
+			{
+				free (cached);
+				free (strtab);
+				free (esyms);
+				return false;
+			}
+
+			bfd_get_symcount (abfd) = symcount;
+			obj_aout_external_sym_count (abfd) = symcount;
+			obj_aout_symbols (abfd) = cached;
+			obj_aout_external_syms (abfd) = esyms;
+			obj_aout_external_strings (abfd) = (char *) strtab;
+			obj_aout_external_string_size (abfd) = strsize;
+			return true;
+		}
+	}
+
+	/* Plan 9 inline format: read the full symbol stream.
+	   For Plan 9 0x1eb executables, obj_sym_filepos is set (and restored
+	   after the generic a.out callback) to EXEC_BYTES_SIZE + a_text + a_data.
+	   Each record: 4-byte big-endian value | 1-byte type (OR 0x80) |
+	                NUL-terminated name.
+	   Exception: 'z'/'Z' (AHISTORY) records carry an extra suffix of big-endian
+	   2-byte pairs terminated by 0x0000 after the NUL-terminated name.  */
 	syms = (unsigned char *) bfd_malloc (n);
 	if (syms == NULL)
 		return false;
 
-	/* Read the Plan 9 inline symbol stream from its correct file position.
-	   For Plan 9 0x1eb executables, obj_sym_filepos is set (and restored after
-	   the generic a.out callback) to EXEC_BYTES_SIZE + a_text + a_data.  */
 	if (bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0
 	    || bfd_bread ((PTR) syms, n, abfd) != n)
 	{
@@ -871,41 +986,25 @@ MY(slurp_symbol_table) (bfd *abfd)
 	ep = syms + n;
 	nsyms = 0;
 
-	/* Count symbols by scanning the variable-length Plan 9 stream.
-	   Each record: 4-byte big-endian value, 1-byte type (with 0x80 OR'd),
-	   NUL-terminated name.
-	   Exception: 'z'/'Z' type records (Plan 9 source-line history) have
-	   an extra variable-length suffix of 2-byte pairs after the name.  */
+	/* Counting pass: scan the variable-length stream to count non-z/Z records. */
 	while (p < ep)
 	{
 		unsigned char stype;
 
-		/* Need at least value (4) + type (1) bytes.  */
 		if (ep - p < 5)
 			break;
 
 		stype = p[4] & ~0x80;
 		p += 5;
 
-		/* Advance past the NUL-terminated name.  */
 		while (p < ep && *p != '\0')
 			p++;
 
 		if (p >= ep)
-		{
-			/* Symbol stream ends without a NUL terminator for this symbol.
-			   This indicates the data is either truncated or malformed.
-			   Stop counting here; the symbols counted so far are valid
-			   and will be returned by the subsequent parsing pass.  */
 			break;
-		}
 
-		/* Skip the NUL terminator.  */
-		p++;
+		p++;  /* skip NUL terminator */
 
-		/* 'z'/'Z' records (AHISTORY source-line records) have an extra
-		   variable-length suffix: big-endian 2-byte pairs, terminated by
-		   a 0x0000 pair.  Skip this suffix and don't count z/Z as symbols.  */
 		if (stype == 'z' || stype == 'Z')
 		{
 			p = plan9_skip_zrec_suffix (p, ep);
@@ -934,6 +1033,7 @@ MY(slurp_symbol_table) (bfd *abfd)
 	}
 	memset (cached, 0, cached_size);
 
+	/* Parsing pass: fill in cached[] for each non-z/Z record. */
 	p = syms;
 	i = 0;
 	while (p < ep && i < nsyms)
@@ -949,7 +1049,6 @@ MY(slurp_symbol_table) (bfd *abfd)
 		cached[i].symbol.flags = 0;
 		cached[i].symbol.section = bfd_und_section_ptr;
 
-		/* Type byte: Plan 9 linker OR-s 0x80 into the type; strip it.  */
 		stype = (unsigned char) (p[4] & ~0x80);
 		p += 5;
 
@@ -960,7 +1059,6 @@ MY(slurp_symbol_table) (bfd *abfd)
 		if (name >= ep)
 			break;
 
-		/* Skip z/Z records in the parsing pass too.  */
 		if (stype == 'z' || stype == 'Z')
 		{
 			p = name + 1;
@@ -1029,9 +1127,6 @@ MY(slurp_symbol_table) (bfd *abfd)
 		i++;
 	}
 
-	/* Update count to reflect the number of symbols actually parsed.
-	   The counting and parsing passes use the same logic, so i should equal
-	   nsyms in the normal case; update to be safe.  */
 	bfd_get_symcount (abfd) = i;
 	obj_aout_external_sym_count (abfd) = i;
 
