@@ -428,31 +428,35 @@ if { [regexp {[Tt]\s+main} $got_nm_reloc] } {
 # target before the Ym match and emits E8/E9 rel32 directly.
 #
 # Fixture: main9.8 contains a CALL to "_callmain" (an external symbol).
-# The disassembly must use direct E8 (call) not FF 15 (call *mem).
+# The tail-call optimizer converts this to JMP (E9), not FF 15 (call *mem).
 # -----------------------------------------------------------------------
 set main9_fixture "$testdir/main9.8"
 set got_main9 [binutils_run $OBJDUMP "-d $main9_fixture"]
 
 # Test 24: disassembly of main9.8 must NOT contain "ff 15" (CALL *abs32).
 # "ff 15 xx xx xx xx" = call *0xXXXXXX (indirect through absolute memory).
-# This is the wrong encoding for CALL to external symbol in Plan 9.
-# Before the fix: CALL _callmain(SB) generated FF 15 (indirect), not E8.
+# This is the wrong encoding for CALL/JMP to external symbol in Plan 9.
+# Before the fix: CALL _callmain(SB) generated FF 15 (indirect), not E8/E9.
 send_log "Testing: main9.8 does not contain indirect call-through-memory (ff 15)\n"
 if { ![regexp {ff\s*15} $got_main9] } {
-    pass "main9.8 CALL to external symbol uses direct E8, not indirect FF 15"
+    pass "main9.8 CALL to external symbol not encoded as indirect FF 15"
 } else {
     fail "main9.8 contains 'ff 15' (indirect call-through-memory) -- CALL encoding wrong"
     send_log "objdump -d output was:\n$got_main9\n"
 }
 
-# Test 25: disassembly of main9.8 must contain "e8" (direct CALL rel32).
-# main9.8 contains a CALL to _callmain (external symbol).
-# After the fix, this must encode as E8 rel32 (direct near-call).
-send_log "Testing: main9.8 CALL to _callmain uses direct E8 rel32\n"
-if { [regexp {\se8\s} $got_main9] } {
-    pass "main9.8 CALL to external symbol encoded as direct E8 rel32"
+# Test 25: disassembly of main9.8 must contain "e9" (direct JMP rel32).
+# main9.8 contains a CALL to _callmain as its last instruction.
+# The tail-call optimizer converts this CALL to JMP (E9 rel32) to match
+# Plan 9's native 8l behavior: 8l emits a fall-through for the last CALL
+# in a function, which means no return address is pushed on the stack.
+# Without this, _callmain's D_PARAM[0] reads argc=0 instead of the main
+# function pointer, causing CALL *EAX = CALL 0 → crash at pc=0x1.
+send_log "Testing: main9.8 CALL _callmain tail-call optimized to JMP (E9 rel32)\n"
+if { [regexp {\se9\s} $got_main9] } {
+    pass "main9.8 CALL _callmain tail-call optimized to direct JMP E9 rel32"
 } else {
-    fail "main9.8 does not contain direct E8 call -- external CALL not encoded as E8"
+    fail "main9.8 CALL _callmain not tail-call optimized -- expected E9 JMP rel32"
     send_log "objdump -d output was:\n$got_main9\n"
 }
 
@@ -490,9 +494,9 @@ set got_reloc [binutils_run $OBJDUMP "-r $main9_fixture"]
 
 # Test 27: objdump -r output must contain a PC32 (pc-relative) relocation.
 if { [regexp -nocase {PC32|pc32|pcrel|R_386_PC32} $got_reloc] } {
-    pass "main9.8 has a PC32 relocation for external CALL"
+    pass "main9.8 has a PC32 relocation for tail-call JMP _callmain"
 } else {
-    fail "main9.8 missing PC32 relocation for external CALL"
+    fail "main9.8 missing PC32 relocation for tail-call JMP _callmain"
     send_log "objdump -r output was:\n$got_reloc\n"
 }
 
@@ -501,9 +505,9 @@ if { [regexp -nocase {PC32|pc32|pcrel|R_386_PC32} $got_reloc] } {
 # objdump displays -4 as "-0x4", "-4", "0xfffffffc" (32-bit), or
 # "0xfffffffffffffffc" (64-bit host); all contain the pattern "fffffffc".
 if { [regexp -nocase {-0x4|-4\b|fffffffc} $got_reloc] } {
-    pass "main9.8 PC32 reloc has correct addend -4 for E8 rel32 CALL"
+    pass "main9.8 PC32 reloc has correct addend -4 for E9 rel32 JMP"
 } else {
-    fail "main9.8 PC32 reloc missing addend -4 -- CALL would land 4 bytes past target"
+    fail "main9.8 PC32 reloc missing addend -4 -- JMP would land 4 bytes past target"
     send_log "objdump -r output was:\n$got_reloc\n"
 }
 

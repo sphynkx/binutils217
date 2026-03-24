@@ -2838,6 +2838,33 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
       return 1;
     }
 
+  /* ---- Tail-call optimization: CALL → JMP at function end ---- */
+  /* Plan 9's native linker (8l) converts the last CALL in a function body
+     to a fall-through (no instruction) when the callee is the immediately
+     following function, or to a JMP otherwise.  Without this, startup
+     functions like _main (autosize=0) that end with CALL _callmain push an
+     extra return address on the stack, shifting _callmain's D_PARAM offsets
+     by 4 and causing the wrong argument to be loaded as the function pointer
+     (EAX becomes 0, so CALL *EAX faults at pc=0x1 on native Plan 9).
+     Fix: replace CALL→JMP for any direct CALL that is the last real
+     instruction in its function (i.e. the next entry is P9AS_TEXT or
+     end-of-array).  Both CALL and JMP to EXTERN use 5 bytes (E8/E9 +
+     rel32), so the span sizes are unchanged. */
+  for (i = 0; i < nprogs_all; i++)
+    {
+      if (progs_all[i].as == P9AS_CALL
+          && (progs_all[i].to.type == P9D_EXTERN
+              || progs_all[i].to.type == P9D_STATIC)
+          && progs_all[i].to.sym >= 0)
+        {
+          /* Check if this is the last instruction in its function
+             (next entry is start of new function or end-of-array) */
+          int next = i + 1;
+          if (next >= nprogs_all || progs_all[next].as == P9AS_TEXT)
+            progs_all[i].as = P9AS_JMP;
+        }
+    }
+
   /* ---- Resolve D_BRANCH targets to pcond_idx ---- */
   /* First, assign tentative PCs using max instruction sizes */
   /* We use ADJSP→ADDL/SUBL/NOP conversion like 8l does */
