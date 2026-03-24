@@ -383,7 +383,7 @@ p9obj_slurp_symtab (bfd *abfd)
           else if (opcode == P9OBJ_ADATA)
             newsec = bfd_get_section_by_name (abfd, ".data");
           else if (opcode == P9OBJ_AGLOBL)
-            newsec = bfd_get_section_by_name (abfd, ".bss");
+            newsec = bfd_get_section_by_name (abfd, ".data");
 
           if (newsec != NULL)
             {
@@ -1400,7 +1400,8 @@ typedef struct p9_SymEntry
   int   stype;    /* STEXT / SDATA / SBSS / SXREF */
   long  value;    /* PC or data offset, assigned during span */
   int   version;  /* version for static disambiguation */
-  int   bss_size; /* for AGLOBL / SBSS */
+  int   bss_size; /* declared size from AGLOBL; used as data extent for P9_SDATA
+                     symbols with no ADATA records, and as BSS size for P9_SBSS */
 } p9_SymEntry;
 
 #define P9_NSYM   50    /* per Plan 9 8.out.h NSYM */
@@ -2545,7 +2546,7 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                 nprogs++;
               }
           }
-        /* ---- AGLOBL: BSS declaration ---- */
+        /* ---- AGLOBL: zero-initialized data declaration ---- */
         else if (opcode == P9OBJ_AGLOBL)
           {
             p9_Adr from_a, to_a;
@@ -2563,7 +2564,7 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                 if (int_syms[si].stype == P9_SXREF
                     || int_syms[si].stype == 0)
                   {
-                    int_syms[si].stype = P9_SBSS;
+                    int_syms[si].stype = P9_SDATA;
                     int_syms[si].value = 0; /* will be assigned later */
                   }
                 if (sz > int_syms[si].bss_size)
@@ -2723,6 +2724,8 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                       if (end > data_extent) data_extent = end;
                     }
                 }
+              if (data_extent == 0 && int_syms[isym].bss_size > 0)
+                data_extent = int_syms[isym].bss_size;
               int_syms[isym].value = data_total_early;
               data_total_early += data_extent;
             }
@@ -2934,6 +2937,8 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                     if (end > maxend) maxend = end;
                   }
               }
+            if (maxend == 0 && int_syms[j].bss_size > 0)
+              maxend = int_syms[j].bss_size;
             int_syms[j].value    = data_total;
             data_total          += maxend;
           }
