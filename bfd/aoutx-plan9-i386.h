@@ -2365,14 +2365,22 @@ MY (final_link) (bfd *abfd,
      header | text bytes | data bytes | relocs | symbols | strings.
      The generic a.out sizing path leaves page-aligned gaps in the file,
      which makes the produced 0x1eb executable header disagree with where
-     the linker actually writes symbols and strings.  */
+     the linker actually writes symbols and strings.
+     obj_textsec->size stores the raw code byte count (not including the
+     header); EXEC_BYTES_SIZE is added only when writing a_text to the
+     on-disk exec header (see MY(write_object_contents)), matching the
+     Plan 9 convention where a_text = code_size + header_size.  */
   if (!info->relocatable
       && bfd_get_arch (abfd) == bfd_arch_i386)
     {
-      obj_textsec (abfd)->size = text_size + EXEC_BYTES_SIZE;
+      obj_textsec (abfd)->size = text_size;
       obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
-      obj_datasec (abfd)->filepos = (obj_textsec (abfd)->filepos
-				     + obj_textsec (abfd)->size);
+      /* data_filepos = a_text = code_size + EXEC_BYTES_SIZE.
+	 Written explicitly as EXEC_BYTES_SIZE + text_size (= obj_textsec->size)
+	 rather than obj_textsec->filepos + obj_textsec->size to make it clear
+	 this equals the on-disk a_text value written by MY(write_object_contents),
+	 not a BFD section-span calculation.  */
+      obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + text_size;
       finfo.treloff = obj_datasec (abfd)->filepos + obj_datasec (abfd)->size;
       finfo.dreloff = finfo.treloff + exec_hdr (abfd)->a_trsize;
       finfo.symoff = finfo.dreloff + exec_hdr (abfd)->a_drsize;

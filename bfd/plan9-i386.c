@@ -513,8 +513,12 @@ MY(write_object_contents) (bfd *abfd)
 		}
 
 		  /* Plan 9 i386 executables: header magic 0x1eb, big-endian fields.
-		   a_text is the actual text byte count; the reader uses
-		   EXEC_BYTES_SIZE + a_text + a_data to locate the symbol table.  */
+		   a_text = code_size + EXEC_BYTES_SIZE (Plan 9 native convention).
+		   The kernel maps text at TEXTADDR (0x1000); the header occupies
+		   [TEXTADDR, TEXTADDR+EXEC_BYTES_SIZE) and code follows, so
+		   data_VMA = TEXTADDR + a_text = TEXTADDR + code_size + EXEC_BYTES_SIZE.
+		   In the file, data starts at offset a_text (= code_size + header).
+		   The symbol table is at file offset a_text + a_data.  */
 
 		if (bfd_get_arch (abfd) == bfd_arch_i386)
 		  {
@@ -522,7 +526,7 @@ MY(write_object_contents) (bfd *abfd)
 			execp->a_info = 0x1eb;
 
 			if (obj_textsec (abfd) != NULL)
-			  execp->a_text = obj_textsec (abfd)->size;
+			  execp->a_text = obj_textsec (abfd)->size + EXEC_BYTES_SIZE;
 
 			execp->a_data = (obj_datasec (abfd) != NULL) ? obj_datasec (abfd)->size : 0;
 			execp->a_bss  = (obj_bsssec (abfd)  != NULL) ? obj_bsssec  (abfd)->size : 0;
@@ -656,7 +660,13 @@ some_plan9_object_p (bfd *abfd,
 		return NULL;
 
 	obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
-	obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + execp->a_text;
+	/* a_text = code_size + EXEC_BYTES_SIZE (Plan 9 convention).
+	   Data follows text in the file at offset a_text.
+	   The previous (buggy) formula used EXEC_BYTES_SIZE + execp->a_text,
+	   which double-counts the header (EXEC_BYTES_SIZE + code_size +
+	   EXEC_BYTES_SIZE) and is inconsistent with native Plan 9 binaries
+	   where data is at file offset a_text, not EXEC_BYTES_SIZE + a_text.  */
+	obj_datasec (abfd)->filepos = execp->a_text;
 	obj_sym_filepos (abfd) = obj_datasec (abfd)->filepos + execp->a_data;
 
 	obj_datasec (abfd)->rawsize = execp->a_data;
@@ -683,12 +693,14 @@ some_plan9_object_p (bfd *abfd,
 	  return NULL;
 
   /* The generic a.out callback recalculates section file positions and
-	   obj_sym_filepos using N_SYMOFF, which does not match the Plan 9
-	   executive layout.  Restore the correct Plan 9 positions:
-	   text immediately after the fixed-size header, data after text,
-	   and symbols after data.  */
+	   obj_sym_filepos using N_SYMOFF, which does not always match the
+	   Plan 9 0x1eb layout.  Re-assert the correct positions explicitly:
+	   text immediately after the fixed-size header (at EXEC_BYTES_SIZE),
+	   data at file offset a_text (since Plan 9 a_text = code_size +
+	   EXEC_BYTES_SIZE, the header is included in the text file span),
+	   and symbols contiguously after data.  */
   obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
-  obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + execp->a_text;
+  obj_datasec (abfd)->filepos = execp->a_text;
   obj_sym_filepos (abfd) = obj_datasec (abfd)->filepos + execp->a_data;
   obj_str_filepos (abfd) = obj_sym_filepos (abfd) + execp->a_syms;
 
