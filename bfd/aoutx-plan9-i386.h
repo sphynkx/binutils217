@@ -2369,10 +2369,10 @@ MY (final_link) (bfd *abfd,
   if (!info->relocatable
       && bfd_get_arch (abfd) == bfd_arch_i386)
     {
-      obj_textsec (abfd)->size = text_size;
+      obj_textsec (abfd)->size = text_size + EXEC_BYTES_SIZE;
       obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
       obj_datasec (abfd)->filepos = (obj_textsec (abfd)->filepos
-				     + text_size);
+				     + obj_textsec (abfd)->size);
       finfo.treloff = obj_datasec (abfd)->filepos + obj_datasec (abfd)->size;
       finfo.dreloff = finfo.treloff + exec_hdr (abfd)->a_trsize;
       finfo.symoff = finfo.dreloff + exec_hdr (abfd)->a_drsize;
