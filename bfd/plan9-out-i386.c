@@ -2709,26 +2709,43 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
       int isym;
       unsigned int osym;
 
-      /* Layout data symbols from ADATA records */
+      /* Layout data symbols: AGLOBL-only globals first (matching native
+         Plan 9 8l convention where zero-initialised AGLOBL vars precede
+         ADATA-initialised data), then ADATA-backed symbols.
+         Pass 1 places symbols that have no ADATA records; pass 2 places
+         symbols that have at least one ADATA record.  */
+
+      /* Pass 1: AGLOBL-only symbols (zero-initialised, no ADATA records) */
       for (isym = 0; isym < n_int_syms; isym++)
         {
-          if (int_syms[isym].stype == P9_SDATA)
+          int drec;
+          if (int_syms[isym].stype != P9_SDATA) continue;
+          if (int_syms[isym].bss_size <= 0) continue;
+          /* skip if any ADATA record targets this symbol */
+          for (drec = 0; drec < ndatarecs; drec++)
+            if (datarecs[drec].sym_idx == isym) break;
+          if (drec < ndatarecs) continue;
+          int_syms[isym].value = data_total_early;
+          data_total_early += int_syms[isym].bss_size;
+        }
+
+      /* Pass 2: ADATA-backed symbols */
+      for (isym = 0; isym < n_int_syms; isym++)
+        {
+          long data_extent = 0;
+          int drec;
+          if (int_syms[isym].stype != P9_SDATA) continue;
+          for (drec = 0; drec < ndatarecs; drec++)
             {
-              long data_extent = 0;
-              int drec;
-              for (drec = 0; drec < ndatarecs; drec++)
+              if (datarecs[drec].sym_idx == isym)
                 {
-                  if (datarecs[drec].sym_idx == isym)
-                    {
-                      long end = datarecs[drec].offset + datarecs[drec].width;
-                      if (end > data_extent) data_extent = end;
-                    }
+                  long end = datarecs[drec].offset + datarecs[drec].width;
+                  if (end > data_extent) data_extent = end;
                 }
-              if (data_extent == 0 && int_syms[isym].bss_size > 0)
-                data_extent = int_syms[isym].bss_size;
-              int_syms[isym].value = data_total_early;
-              data_total_early += data_extent;
             }
+          if (data_extent == 0) continue; /* no ADATA, handled in pass 1 */
+          int_syms[isym].value = data_total_early;
+          data_total_early += data_extent;
         }
 
       /* Layout BSS symbols: assign each a unique offset using its size */
@@ -2766,6 +2783,54 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
         }
 
       tdata->data_size = (bfd_size_type) data_total_early;
+      /* Build data content buffer if there are ADATA records (e.g. SCONST
+         strings in a no-code object).  AGLOBL-only objects stay all-zeros
+         so data_content can remain NULL for those.  */
+      if (data_total_early > 0 && ndatarecs > 0)
+        {
+          bfd_byte *dbuf = (bfd_byte *) bfd_zalloc (abfd,
+                             (bfd_size_type) data_total_early);
+          if (dbuf)
+            {
+              int drec;
+              for (drec = 0; drec < ndatarecs; drec++)
+                {
+                  int si2 = datarecs[drec].sym_idx;
+                  long base = int_syms[si2].value;
+                  long off2  = datarecs[drec].offset;
+                  int  w    = datarecs[drec].width;
+                  long absoff = base + off2;
+                  if (absoff < 0 || absoff + w > data_total_early)
+                    continue;
+                  if (!datarecs[drec].is_sym_ref)
+                    {
+                      long v = datarecs[drec].val.ival;
+                      switch (w)
+                        {
+                        case 1: dbuf[absoff] = (unsigned char)v; break;
+                        case 2: dbuf[absoff]   = (unsigned char)v;
+                                dbuf[absoff+1] = (unsigned char)(v>>8);
+                                break;
+                        case 4: dbuf[absoff]   = (unsigned char)v;
+                                dbuf[absoff+1] = (unsigned char)(v>>8);
+                                dbuf[absoff+2] = (unsigned char)(v>>16);
+                                dbuf[absoff+3] = (unsigned char)(v>>24);
+                                break;
+                        case 8:
+                          {
+                            unsigned long lo = (unsigned long)v;
+                            int bi;
+                            for (bi = 0; bi < 8; bi++)
+                              dbuf[absoff+bi] = (unsigned char)(lo >> (bi*8));
+                            break;
+                          }
+                        }
+                    }
+                  /* sym ref: leave as 0, reloc will fix it */
+                }
+              tdata->data_content = dbuf;
+            }
+        }
       tdata->bss_size  = (bfd_size_type) bss_total_early;
       tdata->encoded   = 1;
       free (datarecs);
@@ -2921,27 +2986,39 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
         }
     }
 
-  /* ---- Layout data symbols ---- */
+  /* ---- Layout data symbols: AGLOBL-only first, then ADATA-backed ----
+     This matches native Plan 9 8l convention: zero-initialised AGLOBL
+     globals precede ADATA-initialised data within each object file.  */
   { int j;
+    /* Pass 1: AGLOBL-only symbols (zero-initialised, no ADATA records) */
     for (j = 0; j < n_int_syms; j++)
       {
-        if (int_syms[j].stype == P9_SDATA)
+        int k;
+        if (int_syms[j].stype != P9_SDATA) continue;
+        if (int_syms[j].bss_size <= 0) continue;
+        for (k = 0; k < ndatarecs; k++)
+          if (datarecs[k].sym_idx == j) break;
+        if (k < ndatarecs) continue; /* has ADATA, handled in pass 2 */
+        int_syms[j].value = data_total;
+        data_total       += int_syms[j].bss_size;
+      }
+    /* Pass 2: ADATA-backed symbols */
+    for (j = 0; j < n_int_syms; j++)
+      {
+        long maxend = 0;
+        int drec;
+        if (int_syms[j].stype != P9_SDATA) continue;
+        for (drec = 0; drec < ndatarecs; drec++)
           {
-            /* compute size from ADATA records */
-            long maxend = 0, k;
-            for (k = 0; k < ndatarecs; k++)
+            if (datarecs[drec].sym_idx == j)
               {
-                if (datarecs[k].sym_idx == j)
-                  {
-                    long end = datarecs[k].offset + datarecs[k].width;
-                    if (end > maxend) maxend = end;
-                  }
+                long end = datarecs[drec].offset + datarecs[drec].width;
+                if (end > maxend) maxend = end;
               }
-            if (maxend == 0 && int_syms[j].bss_size > 0)
-              maxend = int_syms[j].bss_size;
-            int_syms[j].value    = data_total;
-            data_total          += maxend;
           }
+        if (maxend == 0) continue; /* no ADATA, already handled in pass 1 */
+        int_syms[j].value = data_total;
+        data_total       += maxend;
       }
     /* BSS symbols */
     for (j = 0; j < n_int_syms; j++)
