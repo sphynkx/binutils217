@@ -1,4 +1,4 @@
-This is ld.info, produced by makeinfo version 7.1 from ld.texinfo.
+This is ld.info, produced by makeinfo version 7.0.3 from ld.texinfo.
 
 START-INFO-DIR-ENTRY
 * Ld: (ld).                       The GNU linker.
@@ -19,7 +19,7 @@ This file documents the GNU linker ld version 2.17.
 
    This document is distributed under the terms of the GNU Free
 Documentation License.  A copy of the license is included in the section
-entitled "GNU Free Documentation License".
+entitled “GNU Free Documentation License”.
 
 * Menu:
 
@@ -45,12 +45,12 @@ and ties up symbol references.  Usually the last step in compiling a
 program is to run ‘ld’.
 
    ‘ld’ accepts Linker Command Language files written in a superset of
-AT&T's Link Editor Command Language syntax, to provide explicit and
+AT&T’s Link Editor Command Language syntax, to provide explicit and
 total control over the linking process.
 
    This version of ‘ld’ uses the general purpose BFD libraries to
 operate on object files.  This allows ‘ld’ to read, combine, and write
-object files in many different formats--for example, COFF or ‘a.out’.
+object files in many different formats—for example, COFF or ‘a.out’.
 Different formats may be linked together to produce any available kind
 of object file.  *Note BFD::, for more information.
 
@@ -132,8 +132,8 @@ requires them.
 
    For options whose names are multiple letters, either one dash or two
 can precede the option name; for example, ‘-trace-symbol’ and
-‘--trace-symbol’ are equivalent.  Note--there is one exception to this
-rule.  Multiple letter options that start with a lower case 'o' can only
+‘--trace-symbol’ are equivalent.  Note—there is one exception to this
+rule.  Multiple letter options that start with a lower case ’o’ can only
 be preceeded by two dashes.  This is to reduce confusion with the ‘-o’
 option.  So for example ‘-omagic’ sets the output file name to ‘magic’
 whereas ‘--omagic’ sets the NMAGIC flag on the output.
@@ -144,8 +144,8 @@ immediately following the option that requires them.  For example,
 ‘--trace-symbol foo’ and ‘--trace-symbol=foo’ are equivalent.  Unique
 abbreviations of the names of multiple-letter options are accepted.
 
-   Note--if the linker is being invoked indirectly, via a compiler
-driver (e.g.  ‘gcc’) then all the linker command line options should be
+   Note—if the linker is being invoked indirectly, via a compiler driver
+(e.g.  ‘gcc’) then all the linker command line options should be
 prefixed by ‘-Wl,’ (or whatever is appropriate for the particular
 compiler driver) like this:
 
@@ -195,7 +195,7 @@ GNU linker:
      file.  If your ‘ld’ is configured this way, you can use the ‘-b’
      option to specify the binary format for input object files that
      follow this option on the command line.  Even when ‘ld’ is
-     configured to support alternative object formats, you don't usually
+     configured to support alternative object formats, you don’t usually
      need to specify this, as ‘ld’ should be configured to expect as a
      default input format the most usual format on each machine.
      INPUT-FORMAT is a text string, the name of a particular format
@@ -499,10 +499,10 @@ GNU linker:
 
 ‘-r’
 ‘--relocatable’
-     Generate relocatable output--i.e., generate an output file that can
+     Generate relocatable output—i.e., generate an output file that can
      in turn serve as input to ‘ld’.  This is often called “partial
      linking”.  As a side effect, in environments that support standard
-     Unix magic numbers, this option also sets the output file's magic
+     Unix magic numbers, this option also sets the output file’s magic
      number to ‘OMAGIC’.  If this option is not specified, an absolute
      file is produced.  When linking C++ programs, this option _will
      not_ resolve references to constructors; to do that, use ‘-Ur’.
@@ -541,7 +541,7 @@ GNU linker:
 
 ‘-T SCRIPTFILE’
 ‘--script=SCRIPTFILE’
-     Use SCRIPTFILE as the linker script.  This script replaces ‘ld’'s
+     Use SCRIPTFILE as the linker script.  This script replaces ‘ld’’s
      default linker script (rather than adding to it), so COMMANDFILE
      must specify everything necessary to describe the output file.
      *Note Scripts::.  If SCRIPTFILE does not exist in the current
@@ -558,11 +558,11 @@ GNU linker:
 
 ‘-Ur’
      For anything other than C++ programs, this option is equivalent to
-     ‘-r’: it generates relocatable output--i.e., an output file that
-     can in turn serve as input to ‘ld’.  When linking C++ programs,
-     ‘-Ur’ _does_ resolve references to constructors, unlike ‘-r’.  It
-     does not work to use ‘-Ur’ on files that were themselves linked
-     with ‘-Ur’; once the constructor table has been built, it cannot be
+     ‘-r’: it generates relocatable output—i.e., an output file that can
+     in turn serve as input to ‘ld’.  When linking C++ programs, ‘-Ur’
+     _does_ resolve references to constructors, unlike ‘-r’.  It does
+     not work to use ‘-Ur’ on files that were themselves linked with
+     ‘-Ur’; once the constructor table has been built, it cannot be
      added to.  Use ‘-Ur’ only for the last partial link, and ‘-r’ for
      the others.
 
@@ -597,7 +597,7 @@ GNU linker:
      necessary to prepend an underscore.
 
      This option is useful when you have an undefined symbol in your
-     link but don't know where the reference is coming from.
+     link but don’t know where the reference is coming from.
 
 ‘-Y PATH’
      Add PATH to the default library search path.  This option exists
@@ -647,7 +647,7 @@ GNU linker:
           object will ignore any default library search paths.
 
      ‘nodelete’
-          Marks the object shouldn't be unloaded at runtime.
+          Marks the object shouldn’t be unloaded at runtime.
 
      ‘nodlopen’
           Marks the object not available to ‘dlopen’.
@@ -659,7 +659,7 @@ GNU linker:
           Marks the object as not requiring executable stack.
 
      ‘norelro’
-          Don't create an ELF ‘PT_GNU_RELRO’ segment header in the
+          Don’t create an ELF ‘PT_GNU_RELRO’ segment header in the
           object.
 
      ‘now’
@@ -758,7 +758,7 @@ GNU linker:
      affects library searching for ‘-l’ options which follow it.  This
      option also implies ‘--unresolved-symbols=report-all’.  This option
      can be used with ‘-shared’.  Doing so means that a shared library
-     is being created but that all of the library's external references
+     is being created but that all of the library’s external references
      must be resolved by pulling in entries from static libraries.
 
 ‘-Bsymbolic’
@@ -816,7 +816,7 @@ GNU linker:
      constants or symbols.  If you need more elaborate expressions,
      consider using the linker command language from a script (*note
      Assignment: Symbol Definitions: Assignments.).  _Note:_ there
-     should be no white space between SYMBOL, the equals sign ("<=>"),
+     should be no white space between SYMBOL, the equals sign (“<=>”),
      and EXPRESSION.
 
 ‘--demangle[=STYLE]’
@@ -835,7 +835,7 @@ GNU linker:
 ‘--dynamic-linker FILE’
      Set the name of the dynamic linker.  This is only meaningful when
      generating dynamically linked ELF executables.  The default dynamic
-     linker is normally correct; don't use this unless you know what you
+     linker is normally correct; don’t use this unless you know what you
      are doing.
 
 ‘--fatal-warnings’
@@ -848,7 +848,7 @@ GNU linker:
      ‘.exe’ or ‘.dll’ suffix, this option forces the linker to copy the
      output file to one of the same name with a ‘.exe’ suffix.  This
      option is useful when using unmodified Unix makefiles on a
-     Microsoft Windows host, since some versions of Windows won't run an
+     Microsoft Windows host, since some versions of Windows won’t run an
      image unless it ends in a ‘.exe’ suffix.
 
 ‘--no-gc-sections’
@@ -953,7 +953,7 @@ GNU linker:
      file.  If your ‘ld’ is configured this way, you can use the
      ‘--oformat’ option to specify the binary format for the output
      object file.  Even when ‘ld’ is configured to support alternative
-     object formats, you don't usually need to specify this, as ‘ld’
+     object formats, you don’t usually need to specify this, as ‘ld’
      should be configured to produce as a default output format the most
      usual format on each machine.  OUTPUT-FORMAT is a text string, the
      name of a particular format supported by the BFD libraries.  (You
@@ -1147,12 +1147,12 @@ GNU linker:
      hexadecimal integer; for compatibility with other linkers, you may
      omit the leading ‘0x’ usually associated with hexadecimal values.
      _Note:_ there should be no white space between SECTIONNAME, the
-     equals sign ("<=>"), and ORG.
+     equals sign (“<=>”), and ORG.
 
 ‘-Tbss ORG’
 ‘-Tdata ORG’
 ‘-Ttext ORG’
-     Same as -section-start, with ‘.bss’, ‘.data’ or ‘.text’ as the
+     Same as –section-start, with ‘.bss’, ‘.data’ or ‘.text’ as the
      SECTIONNAME.
 
 ‘--unresolved-symbols=METHOD’
@@ -1175,7 +1175,7 @@ GNU linker:
           but ignore them if they come from shared libraries.  This can
           be useful when creating a dynamic binary and it is known that
           all the shared libraries that it should be referencing are
-          included on the linker's command line.
+          included on the linker’s command line.
 
      The behaviour for shared libraries on their own can also be
      controlled by the ‘--[no-]allow-shlib-undefined’ option.
@@ -1303,7 +1303,7 @@ GNU linker:
      This option makes it generate a warning instead.
 
 ‘--error-unresolved-symbols’
-     This restores the linker's default behaviour of generating errors
+     This restores the linker’s default behaviour of generating errors
      when it is reporting unresolved symbols.
 
 ‘--whole-archive’
@@ -1314,9 +1314,9 @@ GNU linker:
      shared library, forcing every object to be included in the
      resulting shared library.  This option may be used more than once.
 
-     Two notes when using this option from gcc: First, gcc doesn't know
+     Two notes when using this option from gcc: First, gcc doesn’t know
      about this option, so you have to use ‘-Wl,-whole-archive’.
-     Second, don't forget to use ‘-Wl,-no-whole-archive’ after your list
+     Second, don’t forget to use ‘-Wl,-no-whole-archive’ after your list
      of archives, because gcc will add its own list of archives to your
      link and you may not want this flag to affect those as well.
 
@@ -1363,10 +1363,10 @@ GNU linker:
      that those options are only available for ELF systems.
 
 ‘--hash-size=NUMBER’
-     Set the default size of the linker's hash tables to a prime number
+     Set the default size of the linker’s hash tables to a prime number
      close to NUMBER.  Increasing this value can reduce the length of
      time it takes the linker to perform its tasks, at the expense of
-     increasing the linker's memory requirements.  Similarly reducing
+     increasing the linker’s memory requirements.  Similarly reducing
      this value can reduce the memory requirements at the expense of
      speed.
 
@@ -1378,7 +1378,7 @@ GNU linker:
 
      Another effect of the switch is to set the default hash table size
      to 1021, which again saves memory at the cost of lengthening the
-     linker's run time.  This is not done however if the ‘--hash-size’
+     linker’s run time.  This is not done however if the ‘--hash-size’
      switch has been used.
 
      The ‘--reduce-memory-overheads’ switch may be also be used to
@@ -1418,7 +1418,7 @@ either a space or an equals sign.
 ‘--enable-stdcall-fixup’
 ‘--disable-stdcall-fixup’
      If the link finds a symbol that it cannot resolve, it will attempt
-     to do "fuzzy linking" by looking for another defined symbol that
+     to do “fuzzy linking” by looking for another defined symbol that
      differs only in the format of the symbol name (cdecl vs stdcall)
      and will resolve that symbol by linking to the match.  For example,
      the undefined symbol ‘_foo’ might be linked to the function
@@ -1435,13 +1435,13 @@ either a space or an equals sign.
 ‘--export-all-symbols’
      If given, all global symbols in the objects used to build a DLL
      will be exported by the DLL. Note that this is the default if there
-     otherwise wouldn't be any exported symbols.  When symbols are
+     otherwise wouldn’t be any exported symbols.  When symbols are
      explicitly exported via DEF files or implicitly exported via
      function attributes, the default is to not export anything else
      unless this option is given.  Note that the symbols ‘DllMain@12’,
      ‘DllEntryPoint@0’, ‘DllMainCRTStartup@12’, and ‘impure_ptr’ will
      not be automatically exported.  Also, symbols imported from other
-     DLLs will not be re-exported, nor will symbols specifying the DLL's
+     DLLs will not be re-exported, nor will symbols specifying the DLL’s
      internal layout such as those beginning with ‘_head_’ or ending
      with ‘_iname’.  In addition, no symbols from ‘libgcc’, ‘libstd++’,
      ‘libmingw32’, or ‘crtX.o’ will be exported.  Symbols whose names
@@ -1490,39 +1490,39 @@ either a space or an equals sign.
      targeted port of the linker]
 
 ‘--large-address-aware’
-     If given, the appropriate bit in the "Charateristics" field of the
+     If given, the appropriate bit in the “Charateristics” field of the
      COFF header is set to indicate that this executable supports
      virtual addresses greater than 2 gigabytes.  This should be used in
      conjuction with the /3GB or /USERVA=VALUE megabytes switch in the
-     "[operating systems]" section of the BOOT.INI. Otherwise, this bit
+     “[operating systems]” section of the BOOT.INI. Otherwise, this bit
      has no effect.  [This option is specific to PE targeted ports of
      the linker]
 
 ‘--major-image-version VALUE’
-     Sets the major number of the "image version".  Defaults to 1.
+     Sets the major number of the “image version”.  Defaults to 1.
      [This option is specific to the i386 PE targeted port of the
      linker]
 
 ‘--major-os-version VALUE’
-     Sets the major number of the "os version".  Defaults to 4.  [This
+     Sets the major number of the “os version”.  Defaults to 4.  [This
      option is specific to the i386 PE targeted port of the linker]
 
 ‘--major-subsystem-version VALUE’
-     Sets the major number of the "subsystem version".  Defaults to 4.
+     Sets the major number of the “subsystem version”.  Defaults to 4.
      [This option is specific to the i386 PE targeted port of the
      linker]
 
 ‘--minor-image-version VALUE’
-     Sets the minor number of the "image version".  Defaults to 0.
+     Sets the minor number of the “image version”.  Defaults to 0.
      [This option is specific to the i386 PE targeted port of the
      linker]
 
 ‘--minor-os-version VALUE’
-     Sets the minor number of the "os version".  Defaults to 0.  [This
+     Sets the minor number of the “os version”.  Defaults to 0.  [This
      option is specific to the i386 PE targeted port of the linker]
 
 ‘--minor-subsystem-version VALUE’
-     Sets the minor number of the "subsystem version".  Defaults to 0.
+     Sets the minor number of the “subsystem version”.  Defaults to 0.
      [This option is specific to the i386 PE targeted port of the
      linker]
 
@@ -1569,15 +1569,15 @@ either a space or an equals sign.
      Do sophisticated linking of ‘_symbol’ to ‘__imp__symbol’ for DATA
      imports from DLLs, and create the necessary thunking symbols when
      building the import libraries with those DATA exports.  Note: Use
-     of the 'auto-import' extension will cause the text section of the
+     of the ’auto-import’ extension will cause the text section of the
      image file to be made writable.  This does not conform to the
      PE-COFF format specification published by Microsoft.
 
-     Using 'auto-import' generally will 'just work' - but sometimes you
+     Using ’auto-import’ generally will ’just work’ – but sometimes you
      may see this message:
 
-     "variable '<var>' can't be auto-imported.  Please read the
-     documentation for ld's ‘--enable-auto-import’ for details."
+     "variable ’<var>’ can’t be auto-imported.  Please read the
+     documentation for ld’s ‘--enable-auto-import’ for details."
 
      This message occurs when some (sub)expression accesses an address
      ultimately given by the sum of two constants (Win32 import tables
@@ -1592,15 +1592,15 @@ either a space or an equals sign.
      There are several ways to address this difficulty, regardless of
      the data type of the exported variable:
 
-     One way is to use -enable-runtime-pseudo-reloc switch.  This leaves
+     One way is to use –enable-runtime-pseudo-reloc switch.  This leaves
      the task of adjusting references in your client code for runtime
      environment, so this method works only when runtime environment
      supports this feature.
 
-     A second solution is to force one of the 'constants' to be a
-     variable - that is, unknown and un-optimizable at compile time.
+     A second solution is to force one of the ’constants’ to be a
+     variable – that is, unknown and un-optimizable at compile time.
      For arrays, there are two possibilities: a) make the indexee (the
-     array's address) a variable, or b) make the 'constant' index a
+     array’s address) a variable, or b) make the ’constant’ index a
      variable.  Thus:
 
           extern type extern_array[];
@@ -1628,13 +1628,13 @@ either a space or an equals sign.
             { volatile long long * local_ll=&extern_ll; *local_ll }
 
      A third method of dealing with this difficulty is to abandon
-     'auto-import' for the offending symbol and mark it with
+     ’auto-import’ for the offending symbol and mark it with
      ‘__declspec(dllimport)’.  However, in practise that requires using
      compile-time #defines to indicate whether you are building a DLL,
      building client code that will link to the DLL, or merely
      building/linking to a static library.  In making the choice between
-     the various methods of resolving the 'direct address with constant
-     offset' problem, you should consider typical real-world usage:
+     the various methods of resolving the ’direct address with constant
+     offset’ problem, you should consider typical real-world usage:
 
      Original:
           --foo.h
@@ -1684,9 +1684,9 @@ either a space or an equals sign.
      specific to the i386 PE targeted port of the linker]
 
 ‘--enable-runtime-pseudo-reloc’
-     If your code contains expressions described in -enable-auto-import
+     If your code contains expressions described in –enable-auto-import
      section, that is, DATA imports from DLL with non-zero offset, this
-     switch will create a vector of 'runtime pseudo relocations' which
+     switch will create a vector of ’runtime pseudo relocations’ which
      can be used by runtime environment to adjust references to such
      data in your client code.  [This option is specific to the i386 PE
      targeted port of the linker]
@@ -1732,7 +1732,7 @@ File: ld.info,  Node: Environment,  Prev: Options,  Up: Invocation
 You can change the behaviour of ‘ld’ with the environment variables
 ‘GNUTARGET’, ‘LDEMULATION’ and ‘COLLECT_NO_DEMANGLE’.
 
-   ‘GNUTARGET’ determines the input-file object format if you don't use
+   ‘GNUTARGET’ determines the input-file object format if you don’t use
 ‘-b’ (or its synonym ‘--format’).  Its value should be one of the BFD
 names for an input format (*note BFD::).  If there is no ‘GNUTARGET’ in
 the environment, ‘ld’ uses the natural format of the target.  If
@@ -1744,7 +1744,7 @@ However, the configuration procedure for BFD on each system places the
 conventional format for that system first in the search-list, so
 ambiguities are resolved in favor of convention.
 
-   ‘LDEMULATION’ determines the default emulation if you don't use the
+   ‘LDEMULATION’ determines the default emulation if you don’t use the
 ‘-m’ option.  The emulation can affect various aspects of linker
 behaviour, particularly the default linker script.  You can list the
 available emulations with the ‘--verbose’ or ‘-V’ options.  If the ‘-m’
@@ -1891,12 +1891,12 @@ You use the ‘SECTIONS’ command to describe the memory layout of the
 output file.
 
    The ‘SECTIONS’ command is a powerful command.  Here we will describe
-a simple use of it.  Let's assume your program consists only of code,
+a simple use of it.  Let’s assume your program consists only of code,
 initialized data, and uninitialized data.  These will be in the ‘.text’,
-‘.data’, and ‘.bss’ sections, respectively.  Let's assume further that
+‘.data’, and ‘.bss’ sections, respectively.  Let’s assume further that
 these are the only sections which appear in your input files.
 
-   For this example, let's say that the code should be loaded at address
+   For this example, let’s say that the code should be loaded at address
 0x10000, and that the data should start at address 0x8000000.  Here is a
 linker script which will do that:
      SECTIONS
@@ -1945,7 +1945,7 @@ example, the specified addresses for the ‘.text’ and ‘.data’ sections
 will probably satisfy any alignment constraints, but the linker may have
 to create a small gap between the ‘.data’ and ‘.bss’ sections.
 
-   That's it!  That's a simple and complete linker script.
+   That’s it!  That’s a simple and complete linker script.
 
 
 File: ld.info,  Node: Simple Commands,  Next: Assignments,  Prev: Simple Example,  Up: Scripts
@@ -2003,7 +2003,7 @@ Several linker script commands deal with files.
      in the link, as though they were named on the command line.
 
      For example, if you always want to include ‘subr.o’ any time you do
-     a link, but you can't be bothered to put it on every link command
+     a link, but you can’t be bothered to put it on every link command
      line, then you can put ‘INPUT (subr.o)’ in your linker script.
 
      In fact, if you like, you can list all of your input files in the
@@ -2272,7 +2272,7 @@ File: ld.info,  Node: PROVIDE_HIDDEN,  Next: Source Code Reference,  Prev: PROVI
 --------------------
 
 Similar to ‘PROVIDE’.  For ELF targeted ports, the symbol will be hidden
-and won't be exported.
+and won’t be exported.
 
 
 File: ld.info,  Node: Source Code Reference,  Prev: PROVIDE_HIDDEN,  Up: Assignments
@@ -2305,10 +2305,10 @@ transformation has taken place.
 
    When a symbol is declared in a high level language such as C, two
 things happen.  The first is that the compiler reserves enough space in
-the program's memory to hold the _value_ of the symbol.  The second is
-that the compiler creates an entry in the program's symbol table which
-holds the symbol's _address_.  ie the symbol table contains the address
-of the block of memory holding the symbol's value.  So for example the
+the program’s memory to hold the _value_ of the symbol.  The second is
+that the compiler creates an entry in the program’s symbol table which
+holds the symbol’s _address_.  ie the symbol table contains the address
+of the block of memory holding the symbol’s value.  So for example the
 following C declaration, at file scope:
 
        int foo = 1000;
@@ -2318,7 +2318,7 @@ the address of an ‘int’ sized block of memory where the number 1000 is
 initially stored.
 
    When a program references a symbol the compiler generates code that
-first accesses the symbol table to find the address of the symbol's
+first accesses the symbol table to find the address of the symbol’s
 memory block and then code to read the value from that memory block.
 So:
 
@@ -2652,7 +2652,7 @@ there can be at most 1 level of nesting for section sorting commands.
 section sorting command are used, section sorting command always takes
 precedence over the command line option.
 
-   If the section sorting command in linker script isn't nested, the
+   If the section sorting command in linker script isn’t nested, the
 command line option will make the section sorting command to be treated
 as nested sorting command.
 
@@ -2723,7 +2723,7 @@ File: ld.info,  Node: Input Section Keep,  Next: Input Section Example,  Prev: I
 
 When link-time garbage collection is in use (‘--gc-sections’), it is
 often useful to mark sections that should not be eliminated.  This is
-accomplished by surrounding an input section's wildcard entry with
+accomplished by surrounding an input section’s wildcard entry with
 ‘KEEP()’, as in ‘KEEP(*(.init))’ or ‘KEEP(SORT_BY_NAME(*)(.ctors))’.
 
 
@@ -2792,7 +2792,7 @@ endianness.  When the object file format does not have an explicit
 endianness, as is true of, for example, S-records, the value will be
 stored in the endianness of the first input object file.
 
-   Note--these commands only work inside a section description and not
+   Note—these commands only work inside a section description and not
 between them, so the following will produce an error from the linker:
      SECTIONS { .text : { *(.text) } LONG(1) .data : { *(.data) } } 
    whereas this will work:
@@ -2929,7 +2929,7 @@ like this:
          OUTPUT-SECTION-COMMAND
          ...
        } [>REGION] [AT>LMA_REGION] [:PHDR :PHDR ...] [=FILLEXP]
-   We've already described SECTION, ADDRESS, and OUTPUT-SECTION-COMMAND.
+   We’ve already described SECTION, ADDRESS, and OUTPUT-SECTION-COMMAND.
 In this section we will describe the remaining section attributes.
 
 * Menu:
@@ -2990,7 +2990,7 @@ that by using the ‘AT’ keyword.  The expression LMA that follows the
 ‘AT’ keyword specifies the load address of the section.
 
    Alternatively, with ‘AT>LMA_REGION’ expression, you may specify a
-memory region for the section's load address.  *Note MEMORY::.  Note
+memory region for the section’s load address.  *Note MEMORY::.  Note
 that if the section has not had a VMA assigned to it then the linker
 will use the LMA_REGION as the VMA region as well.  *Note Output Section
 Region::.
@@ -3038,7 +3038,7 @@ File: ld.info,  Node: Forced Output Alignment,  Next: Forced Input Alignment,  P
 3.6.8.3 Forced Output Alignment
 ...............................
 
-You can increase an output section's alignment by using ALIGN.
+You can increase an output section’s alignment by using ALIGN.
 
 
 File: ld.info,  Node: Forced Input Alignment,  Next: Output Section Region,  Prev: Forced Output Alignment,  Up: Output Section Attributes
@@ -3209,7 +3209,7 @@ File: ld.info,  Node: MEMORY,  Next: PHDRS,  Prev: SECTIONS,  Up: Scripts
 3.7 MEMORY Command
 ==================
 
-The linker's default configuration permits allocation of all available
+The linker’s default configuration permits allocation of all available
 memory.  You can override this by using the ‘MEMORY’ command.
 
    The ‘MEMORY’ command describes the location and size of blocks of
@@ -3457,7 +3457,7 @@ can also use the ‘--version-script’ linker option.
      VERSION { version-script-commands }
 
    The format of the version script commands is identical to that used
-by Sun's linker in Solaris 2.5.  The version script defines a tree of
+by Sun’s linker in Solaris 2.5.  The version script defines a tree of
 version nodes.  You specify the node names and interdependencies in the
 version script.  You can specify which symbols are bound to which
 version nodes, and you can reduce a specified set of symbols to local
@@ -3495,7 +3495,7 @@ symbols to local scope so that they are not visible outside of the
 shared library; this is done using wildcard patterns, so that any symbol
 whose name begins with ‘old’, ‘original’, or ‘new’ is matched.  The
 wildcard patterns available are the same as those used in the shell when
-matching filenames (also known as "globbing").  However, if you specify
+matching filenames (also known as “globbing”).  However, if you specify
 the symbol name inside double quotes, then the name is treated as
 literal, rather than as a glob pattern.
 
@@ -3519,9 +3519,9 @@ could just as well have appeared in between ‘1.1’ and ‘1.2’.  However,
 this would be a confusing way to write a version script.
 
    Node name can be omited, provided it is the only version node in the
-version script.  Such version script doesn't assign any versions to
+version script.  Such version script doesn’t assign any versions to
 symbols, only selects which symbols will be globally visible out and
-which won't.
+which won’t.
 
      { global: foo; bar; local: *; };
 
@@ -3546,7 +3546,7 @@ that interface, it may suddenly and unexpectedly fail.  With symbol
 versioning, the user will get a warning when they start their program if
 the libraries being used with the application are too old.
 
-   There are several GNU extensions to Sun's versioning approach.  The
+   There are several GNU extensions to Sun’s versioning approach.  The
 first of these is the ability to bind a symbol to a version node in the
 source file where the symbol is defined instead of in the versioning
 script.  This was done mainly to reduce the burden on the library
@@ -3772,7 +3772,7 @@ needs to place orphan sections.  For example, given the following:
 mentioned in the script, it might choose to place that section between
 ‘.text’ and ‘.data’.  You might think the linker should place ‘.rodata’
 on the blank line in the above script, but blank lines are of no
-particular significance to the linker.  As well, the linker doesn't
+particular significance to the linker.  As well, the linker doesn’t
 associate the above symbol names with their sections.  Instead, it
 assumes that all assignments or other statements belong to the previous
 output section, except for the special case of an assignment to ‘.’.
@@ -3791,7 +3791,7 @@ script was written as follows:
          end_of_data = . ;
      }
 
-   This may or may not be the script author's intention for the value of
+   This may or may not be the script author’s intention for the value of
 ‘start_of_data’.  One way to influence the orphan section placement is
 to assign the location counter to itself, as the linker assumes that an
 assignment to ‘.’ is setting the start address of a following output
@@ -3891,7 +3891,7 @@ section.  An expression which appears elsewhere will be absolute.
 
    A symbol set to a relative expression will be relocatable if you
 request relocatable output using the ‘-r’ option.  That means that a
-further link operation may change the value of the symbol.  The symbol's
+further link operation may change the value of the symbol.  The symbol’s
 section will be the section of the relative expression.
 
    A symbol set to an absolute expression will retain the same value
@@ -3946,10 +3946,10 @@ use in linker script expressions.
 ‘ALIGN(ALIGN)’
 ‘ALIGN(EXP,ALIGN)’
      Return the location counter (‘.’) or arbitrary expression aligned
-     to the next ALIGN boundary.  The single operand ‘ALIGN’ doesn't
-     change the value of the location counter--it just does arithmetic
-     on it.  The two operand ‘ALIGN’ allows an arbitrary expression to
-     be aligned upwards (‘ALIGN(ALIGN)’ is equivalent to ‘ALIGN(.,
+     to the next ALIGN boundary.  The single operand ‘ALIGN’ doesn’t
+     change the value of the location counter—it just does arithmetic on
+     it.  The two operand ‘ALIGN’ allows an arbitrary expression to be
+     aligned upwards (‘ALIGN(ALIGN)’ is equivalent to ‘ALIGN(.,
      ALIGN)’).
 
      Here is an example which aligns the output ‘.data’ section to the
@@ -4018,7 +4018,7 @@ use in linker script expressions.
      return 0.  You can use this function to provide default values for
      symbols.  For example, the following script fragment shows how to
      set a global symbol ‘begin’ to the first location in the ‘.text’
-     section--but if a symbol called ‘begin’ already existed, its value
+     section—but if a symbol called ‘begin’ already existed, its value
      is preserved:
 
           SECTIONS { ...
@@ -4057,7 +4057,7 @@ use in linker script expressions.
      has been given for this segment (with a command-line ‘-T’ option)
      that value will be returned; otherwise the value will be DEFAULT.
      At present, the ‘-T’ command-line option can only be used to set
-     the base address for the "text", "data", and "bss" sections, but
+     the base address for the “text”, “data”, and “bss” sections, but
      you use ‘SEGMENT_START’ with any segment name.
 
 ‘SIZEOF(SECTION)’
@@ -4077,7 +4077,7 @@ use in linker script expressions.
 
 ‘SIZEOF_HEADERS’
 ‘sizeof_headers’
-     Return the size in bytes of the output file's headers.  This is
+     Return the size in bytes of the output file’s headers.  This is
      information which appears at the start of the output file.  You can
      use this number when setting the start address of the first
      section, if you choose, to facilitate paging.
@@ -4183,7 +4183,7 @@ File: ld.info,  Node: i960,  Next: ARM,  Prev: H8/300,  Up: Machine Dependent
 You can use the ‘-AARCHITECTURE’ command line option to specify one of
 the two-letter names identifying members of the 960 family; the option
 specifies the desired output target, and warns of any incompatible
-instructions in the input files.  It also modifies the linker's search
+instructions in the input files.  It also modifies the linker’s search
 strategy for archive libraries, to support the use of libraries specific
 to each particular architecture, by including in the search loop names
 suffixed with the string identifying the architecture.
@@ -4231,7 +4231,7 @@ linker does not support generating stubs for function calls to
 non-interworking aware Thumb code.
 
    The ‘--thumb-entry’ switch is a duplicate of the generic ‘--entry’
-switch, in that it sets the program's starting address.  But it also
+switch, in that it sets the program’s starting address.  But it also
 sets the bottom bit of the address, so that it can be branched to using
 a BX instruction, and the program will start executing in Thumb mode
 straight away.
@@ -4403,7 +4403,7 @@ reachable if an input section exceeds 33M in size.
      this placement means that ‘.sdata’ cannot always be used in shared
      libraries, because the PowerPC ABI accesses ‘.sdata’ in shared
      libraries from the GOT pointer.  ‘--sdata-got’ forces the old GOT
-     placement.  PowerPC GCC doesn't use ‘.sdata’ in shared libraries,
+     placement.  PowerPC GCC doesn’t use ‘.sdata’ in shared libraries,
      so this option is really only useful for other compilers that may
      do so.
 
@@ -4504,7 +4504,7 @@ File: ld.info,  Node: PowerPC64 ELF64,  Next: TI COFF,  Prev: PowerPC ELF32,  Up
 
 File: ld.info,  Node: TI COFF,  Next: WIN32,  Prev: PowerPC64 ELF64,  Up: Machine Dependent
 
-4.9 ‘ld’'s Support for Various TI COFF Versions
+4.9 ‘ld’’s Support for Various TI COFF Versions
 ===============================================
 
 The ‘--format’ switch allows selection of one of the various TI COFF
@@ -4525,23 +4525,23 @@ command line options mentioned here.
 
 _import libraries_
      The standard Windows linker creates and uses so-called import
-     libraries, which contains information for linking to dll's.  They
+     libraries, which contains information for linking to dll’s.  They
      are regular static archives and are handled as any other static
      archive.  The cygwin and mingw ports of ‘ld’ have specific support
      for creating such libraries provided with the ‘--out-implib’
      command line option.
 
 _exporting DLL symbols_
-     The cygwin/mingw ‘ld’ has several ways to export symbols for dll's.
+     The cygwin/mingw ‘ld’ has several ways to export symbols for dll’s.
 
      _using auto-export functionality_
           By default ‘ld’ exports symbols with the auto-export
           functionality, which is controlled by the following command
           line options:
 
-             • -export-all-symbols [This is the default]
-             • -exclude-symbols
-             • -exclude-libs
+             • –export-all-symbols [This is the default]
+             • –exclude-symbols
+             • –exclude-libs
 
           If, however, ‘--export-all-symbols’ is not given explicitly on
           the command line, then the default auto-export behavior will
@@ -4556,7 +4556,7 @@ _exporting DLL symbols_
           file is an ASCII file containing definitions of symbols which
           should be exported when a dll is created.  Usually it is named
           ‘<dll name>.def’ and is added as any other object file to the
-          linker's command line.  The file's name must end in ‘.def’ or
+          linker’s command line.  The file’s name must end in ‘.def’ or
           ‘.DEF’.
 
                gcc -o <output> <objectfiles> <dll name>.def
@@ -4617,7 +4617,7 @@ _exporting DLL symbols_
 
           The optional keywords that follow the declaration indicate:
 
-          ‘NONAME’: Do not put the symbol name in the DLL's export
+          ‘NONAME’: Do not put the symbol name in the DLL’s export
           table.  It will still be exported by its ordinal alias (either
           the value specified by the .def specification or, otherwise,
           the value assigned by the linker).  The symbol name, however,
@@ -4631,13 +4631,13 @@ _exporting DLL symbols_
 
           ‘CONSTANT’: Like ‘DATA’, but put the undecorated ‘foo’ as well
           as ‘_imp__foo’ into the import library.  Both refer to the
-          read-only import address table's pointer to the variable, not
+          read-only import address table’s pointer to the variable, not
           to the variable itself.  This can be dangerous.  If the user
           code fails to add the ‘dllimport’ attribute and also fails to
           explicitly add the extra indirection that the use of the
           attribute enforces, the application will behave unexpectedly.
 
-          ‘PRIVATE’: Put the symbol in the DLL's export table, but do
+          ‘PRIVATE’: Put the symbol in the DLL’s export table, but do
           not put it into the static import library used to resolve
           imports at link time.  The symbol can still be imported using
           the ‘LoadLibrary/GetProcAddress’ API at runtime or by by using
@@ -4692,13 +4692,13 @@ _automatic data imports_
      command-line option, although it is enabled by default on
      cygwin/mingw.  The ‘--enable-auto-import’ option itself now serves
      mainly to suppress any warnings that are ordinarily emitted when
-     linked objects trigger the feature's use.
+     linked objects trigger the feature’s use.
 
      auto-import of variables does not always work flawlessly without
      additional assistance.  Sometimes, you will see this message
 
-     "variable '<var>' can't be auto-imported.  Please read the
-     documentation for ld's ‘--enable-auto-import’ for details."
+     "variable ’<var>’ can’t be auto-imported.  Please read the
+     documentation for ld’s ‘--enable-auto-import’ for details."
 
      The ‘--enable-auto-import’ documentation explains why this error
      occurs, and several methods that can be used to overcome this
@@ -4707,7 +4707,7 @@ _automatic data imports_
 
      For complex variables imported from DLLs (such as structs or
      classes), object files typically contain a base address for the
-     variable and an offset (_addend_) within the variable-to specify a
+     variable and an offset (_addend_) within the variable–to specify a
      particular field or public member, for instance.  Unfortunately,
      the runtime loader used in win32 environments is incapable of
      fixing these references at runtime without the additional
@@ -4721,7 +4721,7 @@ _automatic data imports_
      specialized code provided by the runtime environment.  Recent
      versions of the cygwin and mingw environments and compilers provide
      this runtime support; older versions do not.  However, the support
-     is only necessary on the developer's platform; the compiled result
+     is only necessary on the developer’s platform; the compiled result
      will run without error on an older system.
 
      ‘--enable-runtime-pseudo-relocs’ is not the default; it must be
@@ -4735,7 +4735,7 @@ _direct linking to a dll_
      large libraries or applications.  When ‘ld’ creates an import lib,
      each function or variable exported from the dll is stored in its
      own bfd, even though a single bfd could contain many exports.  The
-     overhead involved in storing, loading, and processing so many bfd's
+     overhead involved in storing, loading, and processing so many bfd’s
      is quite large, and explains the tremendous time, memory, and
      storage needed to link against particularly large or complex
      libraries when using import libs.
@@ -4743,7 +4743,7 @@ _direct linking to a dll_
      Linking directly to a dll uses no extra command-line switches other
      than ‘-L’ and ‘-l’, because ‘ld’ already searches for a number of
      names to match each library.  All that is needed from the
-     developer's perspective is an understanding of this search, in
+     developer’s perspective is an understanding of this search, in
      order to force ld to select the dll instead of an import library.
 
      For instance, when ld is called with the argument ‘-lxxx’ it will
@@ -4767,12 +4767,12 @@ _direct linking to a dll_
      Other win32-based unix environments, such as mingw or pw32, may use
      other ‘<prefix>’es, although at present only cygwin makes use of
      this feature.  It was originally intended to help avoid name
-     conflicts among dll's built for the various win32/un*x
+     conflicts among dll’s built for the various win32/un*x
      environments, so that (for example) two versions of a zlib dll
      could coexist on the same machine.
 
      The generic cygwin/mingw path layout uses a ‘bin’ directory for
-     applications and dll's and a ‘lib’ directory for the import
+     applications and dll’s and a ‘lib’ directory for the import
      libraries (using cygwin nomenclature):
 
           bin/
@@ -4787,7 +4787,7 @@ _direct linking to a dll_
      1.  Use the dll directly by adding the ‘bin’ path to the link line
           gcc -Wl,-verbose  -o a.exe -L../bin/ -lxxx
 
-     However, as the dll's often have version numbers appended to their
+     However, as the dll’s often have version numbers appended to their
      names (‘cygncurses-5.dll’) this will often fail, unless one
      specifies ‘-L../bin -lncurses-5’ to include the version.  Import
      libs are generally not versioned, and do not have this difficulty.
@@ -4823,7 +4823,7 @@ _direct linking to a dll_
      _not_ work with auto-imported data.
 
      2.  Sometimes it is necessary to include pure static objects within
-     the import library (which otherwise contains only bfd's for
+     the import library (which otherwise contains only bfd’s for
      indirection symbols that point to the exports of a dll).  Again,
      the import lib for the cygwin kernel makes use of this ability, and
      it is not possible to do this without an import lib.
@@ -4885,7 +4885,7 @@ _symbol aliasing_
      option.  If you list only the renamed symbols in the DEF file, and
      use ‘--export-all-symbols’ to handle the other symbols, then the
      both the new names _and_ the original names for the renamed symbols
-     will be exported.  In effect, you'd be aliasing those symbols, not
+     will be exported.  In effect, you’d be aliasing those symbols, not
      renaming them, which is probably not what you wanted.
 
 _weak externals_
@@ -4937,7 +4937,7 @@ literal will be removed and all the ‘L32R’ instructions that use it will
 be changed to reference an identical literal, as long as the location of
 the replacement literal is within the offset range of all the ‘L32R’
 instructions.  The second optimization is to remove unnecessary overhead
-from assembler-generated "longcall" sequences of ‘L32R’/‘CALLXN’ when
+from assembler-generated “longcall” sequences of ‘L32R’/‘CALLXN’ when
 the target functions are within range of direct ‘CALLN’ instructions.
 
    For each of these cases where an indirect call sequence can be
@@ -5011,18 +5011,18 @@ File: ld.info,  Node: BFD outline,  Up: BFD
 When an object file is opened, BFD subroutines automatically determine
 the format of the input object file.  They then build a descriptor in
 memory with pointers to routines that will be used to access elements of
-the object file's data structures.
+the object file’s data structures.
 
    As different information from the object files is required, BFD reads
 from different sections of the file and processes them.  For example, a
 very common operation for the linker is processing symbol tables.  Each
-BFD back end provides a routine for converting between the object file's
+BFD back end provides a routine for converting between the object file’s
 representation of symbols and an internal canonical format.  When the
 linker asks for the symbol table of an object file, it calls through a
 memory pointer to the routine from the relevant BFD back end which reads
 and converts the table into a canonical form.  The linker then operates
 upon the canonical form.  When the link is finished and the linker
-writes the output file's symbol table, another BFD back end routine is
+writes the output file’s symbol table, another BFD back end routine is
 called to take the newly created symbol table and convert it into the
 chosen output format.
 
@@ -5094,7 +5094,7 @@ _files_
      Information stored on a per-file basis includes target machine
      architecture, particular implementation format type, a demand
      pageable bit, and a write protected bit.  Information like Unix
-     magic numbers is not stored here--only the magic numbers' meaning,
+     magic numbers is not stored here—only the magic numbers’ meaning,
      so a ‘ZMAGIC’ file would have both the demand pageable bit and the
      write protected text bit set.  The byte order of the target is
      stored on a per-file basis, so that big- and little-endian object
@@ -5102,7 +5102,7 @@ _files_
 
 _sections_
      Each section in the input file contains the name of the section,
-     the section's original address in the object file, size and
+     the section’s original address in the object file, size and
      alignment information, various flags, and pointers into other BFD
      data structures.
 
@@ -5234,8 +5234,8 @@ example.  That is the easiest thing for you to do, and the most helpful.
 the bug if it is new to us.  Therefore, always write your bug reports on
 the assumption that the bug has not been reported previously.
 
-   Sometimes people give a few sketchy facts and ask, "Does this ring a
-bell?"  This cannot help us fix a bug, so it is basically useless.  We
+   Sometimes people give a few sketchy facts and ask, “Does this ring a
+bell?” This cannot help us fix a bug, so it is basically useless.  We
 respond by asking for enough details to enable us to investigate.  You
 might as well expedite matters by sending them to begin with.
 
@@ -5253,8 +5253,8 @@ might as well expedite matters by sending them to begin with.
    • The type of machine you are using, and the operating system name
      and version number.
 
-   • What compiler (and its version) was used to compile ‘ld’--e.g.
-     "‘gcc-2.7’".
+   • What compiler (and its version) was used to compile ‘ld’—e.g.
+     “‘gcc-2.7’”.
 
    • The command arguments you gave the linker to link your example and
      observe the bug.  To guarantee you will not omit something
@@ -5280,7 +5280,7 @@ might as well expedite matters by sending them to begin with.
      ‘gas’ or ‘gcc’ were configured.
 
    • A description of what behavior you observe that you believe is
-     incorrect.  For example, "It gets a fatal signal."
+     incorrect.  For example, “It gets a fatal signal.”
 
      Of course, if the bug is that ‘ld’ gets a fatal signal, then we
      will certainly notice it.  But if the bug is incorrect output, we
@@ -5365,7 +5365,7 @@ MRI compatible linker scripts have a much simpler command set than the
 scripting language otherwise used with ‘ld’.  GNU ‘ld’ supports the most
 commonly used MRI linker commands; these commands are described here.
 
-   In general, MRI scripts aren't of much use with the ‘a.out’ object
+   In general, MRI scripts aren’t of much use with the ‘a.out’ object
 file format, since it only has three sections and MRI scripts lack some
 features to make use of them.
 
@@ -5414,7 +5414,7 @@ list shows only the upper-case form of each command.
      This command does nothing; it is accepted only for compatibility.
 
 ‘END’
-     This command does nothing whatever; it's only accepted for
+     This command does nothing whatever; it’s only accepted for
      compatibility.
 
 ‘FORMAT OUTPUT-FORMAT’
@@ -5485,14 +5485,14 @@ Appendix B GNU Free Documentation License
   0. PREAMBLE
 
      The purpose of this License is to make a manual, textbook, or other
-     written document "free" in the sense of freedom: to assure everyone
+     written document “free” in the sense of freedom: to assure everyone
      the effective freedom to copy and redistribute it, with or without
      modifying it, either commercially or noncommercially.  Secondarily,
      this License preserves for the author and publisher a way to get
      credit for their work, while not being considered responsible for
      modifications made by others.
 
-     This License is a kind of "copyleft", which means that derivative
+     This License is a kind of “copyleft”, which means that derivative
      works of the document must themselves be free in the same sense.
      It complements the GNU General Public License, which is a copyleft
      license designed for free software.
@@ -5511,17 +5511,17 @@ Appendix B GNU Free Documentation License
 
      This License applies to any manual or other work that contains a
      notice placed by the copyright holder saying it can be distributed
-     under the terms of this License.  The "Document", below, refers to
+     under the terms of this License.  The “Document”, below, refers to
      any such manual or work.  Any member of the public is a licensee,
-     and is addressed as "you."
+     and is addressed as “you.”
 
-     A "Modified Version" of the Document means any work containing the
+     A “Modified Version” of the Document means any work containing the
      Document or a portion of it, either copied verbatim, or with
      modifications and/or translated into another language.
 
-     A "Secondary Section" is a named appendix or a front-matter section
+     A “Secondary Section” is a named appendix or a front-matter section
      of the Document that deals exclusively with the relationship of the
-     publishers or authors of the Document to the Document's overall
+     publishers or authors of the Document to the Document’s overall
      subject (or to related matters) and contains nothing that could
      fall directly within that overall subject.  (For example, if the
      Document is in part a textbook of mathematics, a Secondary Section
@@ -5530,15 +5530,15 @@ Appendix B GNU Free Documentation License
      matters, or of legal, commercial, philosophical, ethical or
      political position regarding them.
 
-     The "Invariant Sections" are certain Secondary Sections whose
+     The “Invariant Sections” are certain Secondary Sections whose
      titles are designated, as being those of Invariant Sections, in the
      notice that says that the Document is released under this License.
 
-     The "Cover Texts" are certain short passages of text that are
+     The “Cover Texts” are certain short passages of text that are
      listed, as Front-Cover Texts or Back-Cover Texts, in the notice
      that says that the Document is released under this License.
 
-     A "Transparent" copy of the Document means a machine-readable copy,
+     A “Transparent” copy of the Document means a machine-readable copy,
      represented in a format whose specification is available to the
      general public, whose contents can be viewed and edited directly
      and straightforwardly with generic text editors or (for images
@@ -5548,7 +5548,7 @@ Appendix B GNU Free Documentation License
      formats suitable for input to text formatters.  A copy made in an
      otherwise Transparent file format whose markup has been designed to
      thwart or discourage subsequent modification by readers is not
-     Transparent.  A copy that is not "Transparent" is called "Opaque."
+     Transparent.  A copy that is not “Transparent” is called “Opaque.”
 
      Examples of suitable formats for Transparent copies include plain
      ASCII without markup, Texinfo input format, LaTeX input format,
@@ -5560,12 +5560,12 @@ Appendix B GNU Free Documentation License
      the machine-generated HTML produced by some word processors for
      output purposes only.
 
-     The "Title Page" means, for a printed book, the title page itself,
+     The “Title Page” means, for a printed book, the title page itself,
      plus such following pages as are needed to hold, legibly, the
      material this License requires to appear in the title page.  For
-     works in formats which do not have any title page as such, "Title
-     Page" means the text near the most prominent appearance of the
-     work's title, preceding the beginning of the body of the text.
+     works in formats which do not have any title page as such, “Title
+     Page” means the text near the most prominent appearance of the
+     work’s title, preceding the beginning of the body of the text.
 
   2. VERBATIM COPYING
 
@@ -5586,7 +5586,7 @@ Appendix B GNU Free Documentation License
   3. COPYING IN QUANTITY
 
      If you publish printed copies of the Document numbering more than
-     100, and the Document's license notice requires Cover Texts, you
+     100, and the Document’s license notice requires Cover Texts, you
      must enclose the copies in covers that carry, clearly and legibly,
      all these Cover Texts: Front-Cover Texts on the front cover, and
      Back-Cover Texts on the back cover.  Both covers must also clearly
@@ -5651,46 +5651,46 @@ Appendix B GNU Free Documentation License
      under the terms of this License, in the form shown in the Addendum
      below.
      G. Preserve in that license notice the full lists of Invariant
-     Sections and required Cover Texts given in the Document's license
+     Sections and required Cover Texts given in the Document’s license
      notice.
      H. Include an unaltered copy of this License.
-     I. Preserve the section entitled "History", and its title, and add
+     I. Preserve the section entitled “History”, and its title, and add
      to it an item stating at least the title, year, new authors, and
      publisher of the Modified Version as given on the Title Page.  If
-     there is no section entitled "History" in the Document, create one
+     there is no section entitled “History” in the Document, create one
      stating the title, year, authors, and publisher of the Document as
      given on its Title Page, then add an item describing the Modified
      Version as stated in the previous sentence.
      J. Preserve the network location, if any, given in the Document for
      public access to a Transparent copy of the Document, and likewise
      the network locations given in the Document for previous versions
-     it was based on.  These may be placed in the "History" section.
+     it was based on.  These may be placed in the “History” section.
      You may omit a network location for a work that was published at
      least four years before the Document itself, or if the original
      publisher of the version it refers to gives permission.
-     K. In any section entitled "Acknowledgements" or "Dedications",
-     preserve the section's title, and preserve in the section all the
+     K. In any section entitled “Acknowledgements” or “Dedications”,
+     preserve the section’s title, and preserve in the section all the
      substance and tone of each of the contributor acknowledgements
      and/or dedications given therein.
      L. Preserve all the Invariant Sections of the Document, unaltered
      in their text and in their titles.  Section numbers or the
      equivalent are not considered part of the section titles.
-     M. Delete any section entitled "Endorsements."  Such a section may
+     M. Delete any section entitled “Endorsements.” Such a section may
      not be included in the Modified Version.
-     N. Do not retitle any existing section as "Endorsements" or to
+     N. Do not retitle any existing section as “Endorsements” or to
      conflict in title with any Invariant Section.
 
      If the Modified Version includes new front-matter sections or
      appendices that qualify as Secondary Sections and contain no
      material copied from the Document, you may at your option designate
      some or all of these sections as invariant.  To do this, add their
-     titles to the list of Invariant Sections in the Modified Version's
+     titles to the list of Invariant Sections in the Modified Version’s
      license notice.  These titles must be distinct from any other
      section titles.
 
-     You may add a section entitled "Endorsements", provided it contains
+     You may add a section entitled “Endorsements”, provided it contains
      nothing but endorsements of your Modified Version by various
-     parties-for example, statements of peer review or that the text has
+     parties–for example, statements of peer review or that the text has
      been approved by an organization as the authoritative definition of
      a standard.
 
@@ -5729,10 +5729,10 @@ Appendix B GNU Free Documentation License
      combined work.
 
      In the combination, you must combine any sections entitled
-     "History" in the various original documents, forming one section
-     entitled "History"; likewise combine any sections entitled
-     "Acknowledgements", and any sections entitled "Dedications."  You
-     must delete all sections entitled "Endorsements."
+     “History” in the various original documents, forming one section
+     entitled “History”; likewise combine any sections entitled
+     “Acknowledgements”, and any sections entitled “Dedications.” You
+     must delete all sections entitled “Endorsements.”
 
   6. COLLECTIONS OF DOCUMENTS
 
@@ -5756,14 +5756,14 @@ Appendix B GNU Free Documentation License
      storage or distribution medium, does not as a whole count as a
      Modified Version of the Document, provided no compilation copyright
      is claimed for the compilation.  Such a compilation is called an
-     "aggregate", and this License does not apply to the other
+     “aggregate”, and this License does not apply to the other
      self-contained works thus compiled with the Document, on account of
      their being thus compiled, if they are not themselves derivative
      works of the Document.
 
      If the Cover Text requirement of section 3 is applicable to these
      copies of the Document, then if the Document is less than one
-     quarter of the entire aggregate, the Document's Cover Texts may be
+     quarter of the entire aggregate, the Document’s Cover Texts may be
      placed on covers that surround only the Document within the
      aggregate.  Otherwise they must appear on covers around the whole
      aggregate.
@@ -5801,7 +5801,7 @@ Appendix B GNU Free Documentation License
 
      Each version of the License is given a distinguishing version
      number.  If the Document specifies that a particular numbered
-     version of this License "or any later version" applies to it, you
+     version of this License “or any later version” applies to it, you
      have the option of following the terms and conditions either of
      that specified version or of any later version that has been
      published (not as a draft) by the Free Software Foundation.  If the
@@ -5825,10 +5825,10 @@ notices just after the title page:
      A copy of the license is included in the section entitled "GNU
      Free Documentation License."
 
-   If you have no Invariant Sections, write "with no Invariant Sections"
+   If you have no Invariant Sections, write “with no Invariant Sections”
 instead of saying which ones are invariant.  If you have no Front-Cover
-Texts, write "no Front-Cover Texts" instead of "Front-Cover Texts being
-LIST"; likewise for Back-Cover Texts.
+Texts, write “no Front-Cover Texts” instead of “Front-Cover Texts being
+LIST”; likewise for Back-Cover Texts.
 
    If your document contains nontrivial examples of program code, we
 recommend releasing these examples in parallel under your choice of free
@@ -5844,6 +5844,8 @@ Index
  [index ]
 * Menu:
 
+* ":                                     Symbols.            (line    6)
+* -(:                                    Options.            (line  602)
 * --accept-unknown-input-arch:           Options.            (line  620)
 * --add-needed:                          Options.            (line  642)
 * --add-stdcall-alias:                   Options.            (line 1325)
@@ -5994,7 +5996,6 @@ Index
 * --warn-unresolved-symbols:             Options.            (line 1222)
 * --whole-archive:                       Options.            (line 1231)
 * --wrap:                                Options.            (line 1245)
-* -(:                                    Options.            (line  602)
 * -AARCH:                                Options.            (line  102)
 * -aKEYWORD:                             Options.            (line   95)
 * -assert KEYWORD:                       Options.            (line  652)
@@ -6064,18 +6065,17 @@ Index
 * -z defs:                               Options.            (line  803)
 * -z KEYWORD:                            Options.            (line  528)
 * -z muldefs:                            Options.            (line  811)
-* :PHDR:                                 Output Section Phdr.
-                                                             (line    6)
 * .:                                     Location Counter.   (line    6)
-* ":                                     Symbols.            (line    6)
-* [COMMON]:                              Input Section Common.
-                                                             (line   29)
 * /DISCARD/:                             Output Section Discarding.
                                                              (line   18)
+* :PHDR:                                 Output Section Phdr.
+                                                             (line    6)
 * =FILLEXP:                              Output Section Fill.
                                                              (line    6)
 * >REGION:                               Output Section Region.
                                                              (line    6)
+* [COMMON]:                              Input Section Common.
+                                                             (line   29)
 * ABSOLUTE (MRI):                        MRI.                (line   32)
 * absolute and relocatable symbols:      Expression Section. (line    6)
 * absolute expressions:                  Expression Section. (line    6)
@@ -6100,12 +6100,12 @@ Index
 * arithmetic:                            Expressions.        (line    6)
 * arithmetic operators:                  Operators.          (line    6)
 * ARM interworking support:              ARM.                (line    6)
-* AS_NEEDED(FILES):                      File Commands.      (line   51)
 * ASSERT:                                Miscellaneous Commands.
                                                              (line    9)
 * assertion in linker script:            Miscellaneous Commands.
                                                              (line    9)
 * assignment in scripts:                 Assignments.        (line    6)
+* AS_NEEDED(FILES):                      File Commands.      (line   51)
 * AT(LMA):                               Output Section LMA. (line    6)
 * AT>LMA_REGION:                         Output Section LMA. (line    6)
 * automatic data imports:                WIN32.              (line  166)
@@ -6355,10 +6355,10 @@ Index
                                                              (line    6)
 * output section data:                   Output Section Data.
                                                              (line    6)
+* OUTPUT(FILENAME):                      File Commands.      (line   61)
 * OUTPUT_ARCH(BFDARCH):                  Miscellaneous Commands.
                                                              (line   46)
 * OUTPUT_FORMAT(BFDNAME):                Format Commands.    (line   10)
-* OUTPUT(FILENAME):                      File Commands.      (line   61)
 * OVERLAY:                               Overlay Description.
                                                              (line    6)
 * overlays:                              Overlay Description.
@@ -6450,13 +6450,13 @@ Index
 * sections, discarding:                  Output Section Discarding.
                                                              (line    6)
 * segment origins, cmd line:             Options.            (line 1074)
-* SEGMENT_START(SEGMENT, DEFAULT):       Builtin Functions.  (line  144)
 * segments, ELF:                         PHDRS.              (line    6)
+* SEGMENT_START(SEGMENT, DEFAULT):       Builtin Functions.  (line  144)
 * shared libraries:                      Options.            (line 1006)
 * SHORT(EXPRESSION):                     Output Section Data.
                                                              (line    6)
-* SIZEOF_HEADERS:                        Builtin Functions.  (line  168)
 * SIZEOF(SECTION):                       Builtin Functions.  (line  152)
+* SIZEOF_HEADERS:                        Builtin Functions.  (line  168)
 * small common symbols:                  Input Section Common.
                                                              (line   20)
 * SORT:                                  Input Section Wildcards.
@@ -6511,9 +6511,9 @@ Index
 * variables, defining:                   Assignments.        (line    6)
 * verbose:                               Options.            (line 1109)
 * version:                               Options.            (line  500)
-* VERSION {script text}:                 VERSION.            (line    6)
 * version script:                        VERSION.            (line    6)
 * version script, symbol versions:       Options.            (line 1115)
+* VERSION {script text}:                 VERSION.            (line    6)
 * versions of symbols:                   VERSION.            (line    6)
 * warnings, on combining symbols:        Options.            (line 1121)
 * warnings, on section alignment:        Options.            (line 1212)
@@ -6528,82 +6528,82 @@ Index
 
 
 Tag Table:
-Node: Top331
-Node: Overview1091
-Node: Invocation2235
-Node: Options2647
-Node: Environment79452
-Node: Scripts81297
-Node: Basic Script Concepts83051
-Node: Script Format85830
-Node: Simple Example86701
-Node: Simple Commands89927
-Node: Entry Point90377
-Node: File Commands91170
-Node: Format Commands95225
-Node: Miscellaneous Commands97283
-Node: Assignments99593
-Node: Simple Assignments100084
-Node: PROVIDE101888
-Node: PROVIDE_HIDDEN103133
-Node: Source Code Reference103381
-Node: SECTIONS106993
-Node: Output Section Description108913
-Node: Output Section Name109971
-Node: Output Section Address110872
-Node: Input Section112525
-Node: Input Section Basics113326
-Node: Input Section Wildcards115712
-Node: Input Section Common120630
-Node: Input Section Keep122140
-Node: Input Section Example122646
-Node: Output Section Data123666
-Node: Output Section Keywords126533
-Node: Output Section Discarding130208
-Node: Output Section Attributes131177
-Node: Output Section Type132183
-Node: Output Section LMA133368
-Node: Forced Output Alignment135687
-Node: Forced Input Alignment135955
-Node: Output Section Region136339
-Node: Output Section Phdr136773
-Node: Output Section Fill137449
-Node: Overlay Description138615
-Node: MEMORY142962
-Node: PHDRS147271
-Node: VERSION152454
-Node: Expressions160419
-Node: Constants161297
-Node: Symbols161887
-Node: Orphan Sections162633
-Node: Location Counter163396
-Node: Operators167838
-Node: Evaluation168760
-Node: Expression Section170132
-Node: Builtin Functions171642
-Node: Implicit Linker Scripts179363
-Node: Machine Dependent180150
-Node: H8/300181052
-Node: i960182781
-Node: ARM184546
-Node: HPPA ELF32187581
-Node: MMIX189256
-Node: MSP430190529
-Node: PowerPC ELF32191637
-Node: PowerPC64 ELF64194016
-Node: TI COFF198585
-Node: WIN32199129
-Node: Xtensa217610
-Node: BFD220845
-Node: BFD outline222307
-Node: BFD information loss223595
-Node: Canonical format226149
-Node: Reporting Bugs230523
-Node: Bug Criteria231229
-Node: Bug Reporting231952
-Node: MRI239106
-Node: GNU Free Documentation License243964
-Node: Index263583
+Node: Top333
+Node: Overview1097
+Node: Invocation2244
+Node: Options2656
+Node: Environment79603
+Node: Scripts81452
+Node: Basic Script Concepts83206
+Node: Script Format85985
+Node: Simple Example86856
+Node: Simple Commands90092
+Node: Entry Point90542
+Node: File Commands91335
+Node: Format Commands95392
+Node: Miscellaneous Commands97450
+Node: Assignments99760
+Node: Simple Assignments100251
+Node: PROVIDE102055
+Node: PROVIDE_HIDDEN103300
+Node: Source Code Reference103550
+Node: SECTIONS107172
+Node: Output Section Description109092
+Node: Output Section Name110150
+Node: Output Section Address111051
+Node: Input Section112704
+Node: Input Section Basics113505
+Node: Input Section Wildcards115891
+Node: Input Section Common120811
+Node: Input Section Keep122321
+Node: Input Section Example122829
+Node: Output Section Data123849
+Node: Output Section Keywords126717
+Node: Output Section Discarding130392
+Node: Output Section Attributes131361
+Node: Output Section Type132369
+Node: Output Section LMA133554
+Node: Forced Output Alignment135875
+Node: Forced Input Alignment136145
+Node: Output Section Region136529
+Node: Output Section Phdr136963
+Node: Output Section Fill137639
+Node: Overlay Description138805
+Node: MEMORY143152
+Node: PHDRS147463
+Node: VERSION152646
+Node: Expressions160623
+Node: Constants161501
+Node: Symbols162091
+Node: Orphan Sections162837
+Node: Location Counter163600
+Node: Operators168046
+Node: Evaluation168968
+Node: Expression Section170340
+Node: Builtin Functions171852
+Node: Implicit Linker Scripts179591
+Node: Machine Dependent180378
+Node: H8/300181280
+Node: i960183009
+Node: ARM184776
+Node: HPPA ELF32187813
+Node: MMIX189488
+Node: MSP430190761
+Node: PowerPC ELF32191869
+Node: PowerPC64 ELF64194250
+Node: TI COFF198819
+Node: WIN32199365
+Node: Xtensa217894
+Node: BFD221133
+Node: BFD outline222595
+Node: BFD information loss223889
+Node: Canonical format226443
+Node: Reporting Bugs230822
+Node: Bug Criteria231528
+Node: Bug Reporting232251
+Node: MRI239417
+Node: GNU Free Documentation License244279
+Node: Index264036
 
 End Tag Table
 
