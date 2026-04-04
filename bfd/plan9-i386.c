@@ -530,7 +530,13 @@ MY(write_object_contents) (bfd *abfd)
 			execp->a_info = 0x1eb;
 
 			if (obj_textsec (abfd) != NULL)
-			  execp->a_text = obj_textsec (abfd)->size + EXEC_BYTES_SIZE;
+			  /* Native Plan 9 8l stores pure code size in a_text (header NOT
+			     counted).  The kernel loads text from file offset EXEC_BYTES_SIZE
+			     for a_text bytes, then data from file offset EXEC_BYTES_SIZE +
+			     a_text.  Including EXEC_BYTES_SIZE here made the kernel read data
+			     from 0x20 bytes past the actual data start, mapping symbol-table
+			     bytes into the data segment.  */
+			  execp->a_text = obj_textsec (abfd)->size;
 
 			execp->a_data = (obj_datasec (abfd) != NULL) ? obj_datasec (abfd)->size : 0;
 			execp->a_bss  = (obj_bsssec (abfd)  != NULL) ? obj_bsssec  (abfd)->size : 0;
@@ -664,13 +670,11 @@ some_plan9_object_p (bfd *abfd,
 		return NULL;
 
 	obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
-	/* a_text = code_size + EXEC_BYTES_SIZE (Plan 9 convention).
-	   Data follows text in the file at offset a_text.
-	   The previous (buggy) formula used EXEC_BYTES_SIZE + execp->a_text,
-	   which double-counts the header (EXEC_BYTES_SIZE + code_size +
-	   EXEC_BYTES_SIZE) and is inconsistent with native Plan 9 binaries
-	   where data is at file offset a_text, not EXEC_BYTES_SIZE + a_text.  */
-	obj_datasec (abfd)->filepos = execp->a_text;
+	/* Native Plan 9 convention: a_text = pure code size (header NOT included).
+	   The kernel reads text from file[EXEC_BYTES_SIZE .. EXEC_BYTES_SIZE+a_text)
+	   and data from file[EXEC_BYTES_SIZE+a_text .. EXEC_BYTES_SIZE+a_text+a_data).
+	   So data file offset = EXEC_BYTES_SIZE + a_text, NOT just a_text.  */
+	obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + execp->a_text;
 	obj_sym_filepos (abfd) = obj_datasec (abfd)->filepos + execp->a_data;
 
 	obj_datasec (abfd)->rawsize = execp->a_data;
@@ -702,23 +706,23 @@ some_plan9_object_p (bfd *abfd,
      Override with the correct Plan 9 i386 VMAs:
        text: TEXTADDR + EXEC_BYTES_SIZE = 0x1000 + 32 = 0x1020
              (header occupies 0x1000..0x101f, code starts at 0x1020)
-       data: page_align(TEXTADDR + a_text)
-             = (0x1000 + a_text + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
-             For a_text < 0x1000 (typical), this is always 0x2000.
+       data: page_align(TEXTADDR + EXEC_BYTES_SIZE + a_text)
+             = (0x1000 + 32 + a_text + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
+             For a_text < 0xfe0 (typical), this is always 0x2000.
              Native Plan 9 8l maps data at the first 0x1000-page boundary
              after text ends, matching what the kernel actually maps.
        bss:  data_vma + a_data  */
   obj_textsec (abfd)->vma = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
   {
-    /* TEXT_START_ADDR = TEXTADDR = 0x1000 (TARGET_PAGE_SIZE) in the bfd macro;
-       subtracting and re-adding EXEC_BYTES_SIZE converts to the TEXTADDR base
-       so the formula matches the Plan 9 spec: (TEXTADDR + a_text + PAGE-1) & ~(PAGE-1).  */
+    /* data_vma = page_align(TEXTADDR + EXEC_BYTES_SIZE + a_text)
+                = page_align(0x1020 + a_text).
+       For a_text < 0xfe0 (i.e. code_size < 0xfe0) this is always 0x2000.  */
     bfd_vma data_vma = ((bfd_vma) TEXT_START_ADDR
-			- EXEC_BYTES_SIZE    /* TEXT_START_ADDR - 0x20 = TEXTADDR = 0x1000 */
-			+ execp->a_text      /* + a_text = code_size + EXEC_BYTES_SIZE */
+			+ EXEC_BYTES_SIZE    /* = 0x1020 */
+			+ execp->a_text      /* a_text = pure code_size */
 			+ TARGET_PAGE_SIZE - 1)
 		       & ~ (bfd_vma)(TARGET_PAGE_SIZE - 1);
-    /* = (0x1000 + a_text + 0xfff) & ~0xfff = 0x2000 for a_text < 0x1000 */
+    /* = (0x1020 + a_text + 0xfff) & ~0xfff = 0x2000 for a_text < 0xfe0 */
     obj_datasec (abfd)->vma = data_vma;
     obj_bsssec  (abfd)->vma = data_vma + execp->a_data;
   }
@@ -730,11 +734,11 @@ some_plan9_object_p (bfd *abfd,
 	   obj_sym_filepos using N_SYMOFF, which does not always match the
 	   Plan 9 0x1eb layout.  Re-assert the correct positions explicitly:
 	   text immediately after the fixed-size header (at EXEC_BYTES_SIZE),
-	   data at file offset a_text (since Plan 9 a_text = code_size +
-	   EXEC_BYTES_SIZE, the header is included in the text file span),
+	   data at file offset EXEC_BYTES_SIZE + a_text (native Plan 9 convention:
+	   a_text = pure code_size, header NOT included in a_text),
 	   and symbols contiguously after data.  */
   obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
-  obj_datasec (abfd)->filepos = execp->a_text;
+  obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + execp->a_text;
   obj_sym_filepos (abfd) = obj_datasec (abfd)->filepos + execp->a_data;
   obj_str_filepos (abfd) = obj_sym_filepos (abfd) + execp->a_syms;
 

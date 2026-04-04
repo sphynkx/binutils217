@@ -180,10 +180,12 @@ if { [regexp "etext" $got14] } {
 # data section at VMA 0x2000.
 # pw header: a_text=0xda, a_data=0x24.  Plan 9 native kernel layout:
 #   text VMA = TEXTADDR + EXEC_BYTES_SIZE = 0x1000 + 32 = 0x1020
-#   data VMA = page_align(TEXTADDR + a_text)
-#            = (0x1000 + 0xda + 0xfff) & ~0xfff = 0x2000
+#   data VMA = page_align(TEXTADDR + EXEC_BYTES_SIZE + a_text)
+#            = (0x1000 + 0x20 + 0xda + 0xfff) & ~0xfff = 0x2000
+# (Native Plan 9 a_text = pure code_size, header NOT counted in a_text.
+# The kernel reads data from file offset EXEC_BYTES_SIZE + a_text.)
 # The Plan 9 kernel maps data at the first 0x1000-aligned page boundary
-# after text ends.  For any Plan 9 executable with a_text < 0x1000
+# after text ends.  For any Plan 9 executable with a_text < 0xfe0
 # (all practical small programs) this is always 0x2000.
 # This verifies that our reader (some_plan9_object_p) overrides the
 # generic N_TXTADDR/N_DATADDR formulas with Plan 9-correct VMAs, and
