@@ -710,12 +710,15 @@ some_plan9_object_p (bfd *abfd,
        bss:  data_vma + a_data  */
   obj_textsec (abfd)->vma = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
   {
+    /* TEXT_START_ADDR = TEXTADDR = 0x1000 (TARGET_PAGE_SIZE) in the bfd macro;
+       subtracting and re-adding EXEC_BYTES_SIZE converts to the TEXTADDR base
+       so the formula matches the Plan 9 spec: (TEXTADDR + a_text + PAGE-1) & ~(PAGE-1).  */
     bfd_vma data_vma = ((bfd_vma) TEXT_START_ADDR
-			- EXEC_BYTES_SIZE    /* = TEXTADDR = 0x1000 */
+			- EXEC_BYTES_SIZE    /* TEXT_START_ADDR - 0x20 = TEXTADDR = 0x1000 */
 			+ execp->a_text      /* + a_text = code_size + EXEC_BYTES_SIZE */
 			+ TARGET_PAGE_SIZE - 1)
 		       & ~ (bfd_vma)(TARGET_PAGE_SIZE - 1);
-    /* Simplified: (0x1000 + a_text + 0xfff) & ~0xfff = 0x2000 for a_text < 0x1000 */
+    /* = (0x1000 + a_text + 0xfff) & ~0xfff = 0x2000 for a_text < 0x1000 */
     obj_datasec (abfd)->vma = data_vma;
     obj_bsssec  (abfd)->vma = data_vma + execp->a_data;
   }

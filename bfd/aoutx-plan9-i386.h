@@ -2394,7 +2394,7 @@ MY (final_link) (bfd *abfd,
 
       /* data VMA = page-aligned (TEXTADDR + a_text)
 	 = (TEXT_START_ADDR + text_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
-	 = (0x1000 + text_size + 0xfff) & ~0xfff  [TEXT_START_ADDR=TEXTADDR=0x1000 in bfd]
+	 = (0x1000 + text_size + 0xfff) & ~0xfff [TEXT_START_ADDR=TEXTADDR=0x1000 in bfd]
 	 For typical Plan 9 executables (text < 0xfe0 bytes) this is 0x2000.
 	 The linker script DATA_ALIGNMENT=ALIGN(SEGMENT_SIZE)=ALIGN(0x1000) produces
 	 the same result; this override ensures consistency and keeps the VMA
