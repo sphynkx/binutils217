@@ -420,7 +420,8 @@ static CONST struct aout_backend_data MY(backend_data) = {
 	1,	/* text_includes_header */
 	0,	/* entry_is_text_address */
 	0,	/* exec_hdr_flags */
-	0x1020,	/* default_text_vma */
+	0x1000,	/* default_text_vma: with text_includes_header=1, effective text VMA
+		   = default_text_vma + EXEC_BYTES_SIZE = TEXT_START_ADDR + 0x20 = 0x1020 */
 	MY_set_sizes,
 	0,	/* exec_header_not_counted */
 	0,	/* add_dynamic_symbols */
@@ -470,12 +471,15 @@ MY(write_object_contents) (bfd *abfd)
     {
       bfd_vma text_vma, data_vma, bss_vma;
 
-      text_vma = 0x1020;
-      data_vma = 0x2000;
-
-      /* Place bss after data; keep 0x1000 alignment like the rest of the format. */
-      bss_vma = data_vma + obj_datasec (abfd)->size;
-      bss_vma = (bss_vma + 0xfff) & ~((bfd_vma) 0xfff);
+      /* Plan 9 kernel maps text at TEXTADDR+EXEC_BYTES_SIZE = 0x1020 and
+	 data at the first page boundary after text ends:
+	 data_vma = (text_vma + text_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
+	 For small executables, text_vma = 0x1020 and text_size < 0xfe0,
+	 so data_vma = 0x2000.  */
+      text_vma = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
+      data_vma = (text_vma + obj_textsec (abfd)->size + TARGET_PAGE_SIZE - 1)
+		 & ~ (bfd_vma)(TARGET_PAGE_SIZE - 1);
+      bss_vma  = data_vma + obj_datasec (abfd)->size;
 
       obj_textsec (abfd)->vma = text_vma;
       obj_datasec (abfd)->vma = data_vma;
@@ -513,8 +517,12 @@ MY(write_object_contents) (bfd *abfd)
 		}
 
 		  /* Plan 9 i386 executables: header magic 0x1eb, big-endian fields.
-		   a_text is the actual text byte count; the reader uses
-		   EXEC_BYTES_SIZE + a_text + a_data to locate the symbol table.  */
+		   a_text = code_size + EXEC_BYTES_SIZE (Plan 9 native convention).
+		   The kernel maps text at TEXTADDR (0x1000); the header occupies
+		   [TEXTADDR, TEXTADDR+EXEC_BYTES_SIZE) and code follows, so
+		   data_VMA = TEXTADDR + a_text = TEXTADDR + code_size + EXEC_BYTES_SIZE.
+		   In the file, data starts at offset a_text (= code_size + header).
+		   The symbol table is at file offset a_text + a_data.  */
 
 		if (bfd_get_arch (abfd) == bfd_arch_i386)
 		  {
@@ -522,6 +530,12 @@ MY(write_object_contents) (bfd *abfd)
 			execp->a_info = 0x1eb;
 
 			if (obj_textsec (abfd) != NULL)
+			  /* Native Plan 9 8l stores pure code size in a_text (header NOT
+			     counted).  The kernel loads text from file offset EXEC_BYTES_SIZE
+			     for a_text bytes, then data from file offset EXEC_BYTES_SIZE +
+			     a_text.  Including EXEC_BYTES_SIZE here made the kernel read data
+			     from 0x20 bytes past the actual data start, mapping symbol-table
+			     bytes into the data segment.  */
 			  execp->a_text = obj_textsec (abfd)->size;
 
 			execp->a_data = (obj_datasec (abfd) != NULL) ? obj_datasec (abfd)->size : 0;
@@ -656,6 +670,10 @@ some_plan9_object_p (bfd *abfd,
 		return NULL;
 
 	obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
+	/* Native Plan 9 convention: a_text = pure code size (header NOT included).
+	   The kernel reads text from file[EXEC_BYTES_SIZE .. EXEC_BYTES_SIZE+a_text)
+	   and data from file[EXEC_BYTES_SIZE+a_text .. EXEC_BYTES_SIZE+a_text+a_data).
+	   So data file offset = EXEC_BYTES_SIZE + a_text, NOT just a_text.  */
 	obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + execp->a_text;
 	obj_sym_filepos (abfd) = obj_datasec (abfd)->filepos + execp->a_data;
 
@@ -682,11 +700,43 @@ some_plan9_object_p (bfd *abfd,
 	if (result == NULL)
 	  return NULL;
 
+  /* The generic a.out callback uses N_TXTADDR/N_DATADDR which are
+     wrong for Plan 9 (they return 0 and 0x1000 respectively, based on
+     the generic OMAGIC/ZMAGIC rules and the 0x1eb magic).
+     Override with the correct Plan 9 i386 VMAs:
+       text: TEXTADDR + EXEC_BYTES_SIZE = 0x1000 + 32 = 0x1020
+             (header occupies 0x1000..0x101f, code starts at 0x1020)
+       data: page_align(TEXTADDR + EXEC_BYTES_SIZE + a_text)
+             = (0x1000 + 32 + a_text + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
+             For a_text < 0xfe0 (typical), this is always 0x2000.
+             Native Plan 9 8l maps data at the first 0x1000-page boundary
+             after text ends, matching what the kernel actually maps.
+       bss:  data_vma + a_data  */
+  obj_textsec (abfd)->vma = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
+  {
+    /* data_vma = page_align(TEXTADDR + EXEC_BYTES_SIZE + a_text)
+                = page_align(0x1020 + a_text).
+       For a_text < 0xfe0 (i.e. code_size < 0xfe0) this is always 0x2000.  */
+    bfd_vma data_vma = ((bfd_vma) TEXT_START_ADDR
+			+ EXEC_BYTES_SIZE    /* = 0x1020 */
+			+ execp->a_text      /* a_text = pure code_size */
+			+ TARGET_PAGE_SIZE - 1)
+		       & ~ (bfd_vma)(TARGET_PAGE_SIZE - 1);
+    /* = (0x1020 + a_text + 0xfff) & ~0xfff = 0x2000 for a_text < 0xfe0 */
+    obj_datasec (abfd)->vma = data_vma;
+    obj_bsssec  (abfd)->vma = data_vma + execp->a_data;
+  }
+  obj_textsec (abfd)->lma = obj_textsec (abfd)->vma;
+  obj_datasec (abfd)->lma = obj_datasec (abfd)->vma;
+  obj_bsssec  (abfd)->lma = obj_bsssec  (abfd)->vma;
+
   /* The generic a.out callback recalculates section file positions and
-	   obj_sym_filepos using N_SYMOFF, which does not match the Plan 9
-	   executive layout.  Restore the correct Plan 9 positions:
-	   text immediately after the fixed-size header, data after text,
-	   and symbols after data.  */
+	   obj_sym_filepos using N_SYMOFF, which does not always match the
+	   Plan 9 0x1eb layout.  Re-assert the correct positions explicitly:
+	   text immediately after the fixed-size header (at EXEC_BYTES_SIZE),
+	   data at file offset EXEC_BYTES_SIZE + a_text (native Plan 9 convention:
+	   a_text = pure code_size, header NOT included in a_text),
+	   and symbols contiguously after data.  */
   obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
   obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + execp->a_text;
   obj_sym_filepos (abfd) = obj_datasec (abfd)->filepos + execp->a_data;

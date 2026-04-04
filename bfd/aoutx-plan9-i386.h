@@ -2365,14 +2365,54 @@ MY (final_link) (bfd *abfd,
      header | text bytes | data bytes | relocs | symbols | strings.
      The generic a.out sizing path leaves page-aligned gaps in the file,
      which makes the produced 0x1eb executable header disagree with where
-     the linker actually writes symbols and strings.  */
+     the linker actually writes symbols and strings.
+     obj_textsec->size stores the raw code byte count (not including the
+     header).  Native Plan 9 8l stores only the pure code size in the
+     on-disk a_text field (header NOT included); the kernel loads text
+     from file offset EXEC_BYTES_SIZE for a_text bytes, and data from
+     file offset EXEC_BYTES_SIZE + a_text.  See MY(write_object_contents).
+
+     VMA correction: the Plan 9 kernel maps text at TEXTADDR+EXEC_BYTES_SIZE
+     = 0x1020 (header occupies 0x1000..0x101f, code at 0x1020+), and maps
+     DATA at the first 0x1000-page boundary after text ends:
+       data_VMA = page_align(TEXTADDR + EXEC_BYTES_SIZE + a_text)
+               = page_align(0x1020 + text_size)
+     For small executables (code_size < ~0xfe0 bytes) this is always 0x2000,
+     matching the native Plan 9 8l output for the t04 test executable.
+     We must set the data/bss section VMAs to these kernel-expected values
+     BEFORE relocations are applied (MY(link_input_bfd)), so that all ABS32
+     data-symbol references in the binary get the addresses the kernel
+     will actually map at runtime.  */
   if (!info->relocatable
       && bfd_get_arch (abfd) == bfd_arch_i386)
     {
-      obj_textsec (abfd)->size = text_size + EXEC_BYTES_SIZE;
+      bfd_vma data_vma;
+      bfd_vma bss_vma;
+
+      obj_textsec (abfd)->size    = text_size;
       obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
-      obj_datasec (abfd)->filepos = (obj_textsec (abfd)->filepos
-				     + obj_textsec (abfd)->size);
+      obj_textsec (abfd)->vma     = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
+
+      /* data VMA = page_align(TEXTADDR + EXEC_BYTES_SIZE + a_text)
+	 = page_align(0x1020 + text_size)
+	 = (TEXT_START_ADDR + EXEC_BYTES_SIZE + text_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
+	 For typical Plan 9 executables (text_size < 0xfe0 bytes) this is 0x2000.
+	 Using EXEC_BYTES_SIZE here matches the kernel's formula and is more
+	 accurate than (TEXT_START_ADDR + text_size) for larger code sizes.
+	 The linker script DATA_ALIGNMENT=ALIGN(SEGMENT_SIZE)=ALIGN(0x1000) produces
+	 the same result for small programs; this override ensures consistency and
+	 keeps the VMA set before MY(link_input_bfd) applies ABS32 relocations.  */
+      data_vma = ((bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE + text_size + TARGET_PAGE_SIZE - 1)
+		 & ~ (bfd_vma)(TARGET_PAGE_SIZE - 1);
+      obj_datasec (abfd)->vma = data_vma;
+
+      bss_vma = data_vma + obj_datasec (abfd)->size;
+      obj_bsssec (abfd)->vma = bss_vma;
+
+      /* data_filepos = EXEC_BYTES_SIZE + text_size = EXEC_BYTES_SIZE + a_text.
+	 Native Plan 9 a_text = pure code_size (header NOT included); the kernel
+	 reads data from file offset EXEC_BYTES_SIZE + a_text.  */
+      obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + text_size;
       finfo.treloff = obj_datasec (abfd)->filepos + obj_datasec (abfd)->size;
       finfo.dreloff = finfo.treloff + exec_hdr (abfd)->a_trsize;
       finfo.symoff = finfo.dreloff + exec_hdr (abfd)->a_drsize;

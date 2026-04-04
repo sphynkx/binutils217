@@ -383,7 +383,7 @@ p9obj_slurp_symtab (bfd *abfd)
           else if (opcode == P9OBJ_ADATA)
             newsec = bfd_get_section_by_name (abfd, ".data");
           else if (opcode == P9OBJ_AGLOBL)
-            newsec = bfd_get_section_by_name (abfd, ".bss");
+            newsec = bfd_get_section_by_name (abfd, ".data");
 
           if (newsec != NULL)
             {
@@ -1400,7 +1400,8 @@ typedef struct p9_SymEntry
   int   stype;    /* STEXT / SDATA / SBSS / SXREF */
   long  value;    /* PC or data offset, assigned during span */
   int   version;  /* version for static disambiguation */
-  int   bss_size; /* for AGLOBL / SBSS */
+  int   bss_size; /* declared size from AGLOBL; used as data extent for P9_SDATA
+                     symbols with no ADATA records, and as BSS size for P9_SBSS */
 } p9_SymEntry;
 
 #define P9_NSYM   50    /* per Plan 9 8.out.h NSYM */
@@ -2545,7 +2546,7 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                 nprogs++;
               }
           }
-        /* ---- AGLOBL: BSS declaration ---- */
+        /* ---- AGLOBL: zero-initialized data declaration ---- */
         else if (opcode == P9OBJ_AGLOBL)
           {
             p9_Adr from_a, to_a;
@@ -2563,7 +2564,7 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                 if (int_syms[si].stype == P9_SXREF
                     || int_syms[si].stype == 0)
                   {
-                    int_syms[si].stype = P9_SBSS;
+                    int_syms[si].stype = P9_SDATA;
                     int_syms[si].value = 0; /* will be assigned later */
                   }
                 if (sz > int_syms[si].bss_size)
@@ -2627,9 +2628,13 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
           {
             p9_Adr from_a, to_a;
             int fr, tr;
-            if (nprogs >= progs_cap)
+            /* Need room for the instruction itself plus possibly a synthetic
+               epilogue ADJSP before RET when the function has a local frame. */
+            int need = (opcode == P9AS_RET && cur_auto_size > 0) ? 2 : 1;
+            if (nprogs + need > progs_cap)
               {
                 int nc = progs_cap ? progs_cap * 2 : 64;
+                while (nc < nprogs + need) nc *= 2;
                 p9_Prog *np = (p9_Prog *) realloc (progs,
                                 nc * sizeof(p9_Prog));
                 if (!np) goto out_err;
@@ -2659,6 +2664,26 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                   to_a.offset += cur_auto_size;
                 else if (to_a.type == P9D_PARAM)
                   to_a.offset += cur_auto_size + 4;
+              }
+
+            /* Synthesize epilogue ADJSP before RET when the function has a
+               local frame (cur_auto_size > 0).  Plan 9's 8l implicitly emits
+               "ADD $frame_size,%esp" (ADJSP -frame_size) before every RET in
+               such functions; .8 object files contain no explicit instruction
+               for this.  Without it, the RET pops a stale argument off the
+               stack instead of the caller's return address, causing a crash. */
+            if (opcode == P9AS_RET && cur_auto_size > 0)
+              {
+                memset (&progs[nprogs], 0, sizeof(p9_Prog));
+                progs[nprogs].as          = P9AS_ADJSP;
+                progs[nprogs].from.type   = P9D_CONST;
+                progs[nprogs].from.offset = -cur_auto_size; /* negative → ADDL */
+                progs[nprogs].from.sym    = -1;
+                progs[nprogs].from.index  = P9D_NONE;
+                progs[nprogs].from.scale  = 1;
+                progs[nprogs].back        = -1; /* synthetic: not in .8 stream */
+                progs[nprogs].pcond_idx   = -1;
+                nprogs++;
               }
 
             memset (&progs[nprogs], 0, sizeof(p9_Prog));
@@ -2708,24 +2733,43 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
       int isym;
       unsigned int osym;
 
-      /* Layout data symbols from ADATA records */
+      /* Layout data symbols: AGLOBL-only globals first (matching native
+         Plan 9 8l convention where zero-initialised AGLOBL vars precede
+         ADATA-initialised data), then ADATA-backed symbols.
+         Pass 1 places symbols that have no ADATA records; pass 2 places
+         symbols that have at least one ADATA record.  */
+
+      /* Pass 1: AGLOBL-only symbols (zero-initialised, no ADATA records) */
       for (isym = 0; isym < n_int_syms; isym++)
         {
-          if (int_syms[isym].stype == P9_SDATA)
+          int drec;
+          if (int_syms[isym].stype != P9_SDATA) continue;
+          if (int_syms[isym].bss_size <= 0) continue;
+          /* skip if any ADATA record targets this symbol */
+          for (drec = 0; drec < ndatarecs; drec++)
+            if (datarecs[drec].sym_idx == isym) break;
+          if (drec < ndatarecs) continue;
+          int_syms[isym].value = data_total_early;
+          data_total_early += int_syms[isym].bss_size;
+        }
+
+      /* Pass 2: ADATA-backed symbols */
+      for (isym = 0; isym < n_int_syms; isym++)
+        {
+          long data_extent = 0;
+          int drec;
+          if (int_syms[isym].stype != P9_SDATA) continue;
+          for (drec = 0; drec < ndatarecs; drec++)
             {
-              long data_extent = 0;
-              int drec;
-              for (drec = 0; drec < ndatarecs; drec++)
+              if (datarecs[drec].sym_idx == isym)
                 {
-                  if (datarecs[drec].sym_idx == isym)
-                    {
-                      long end = datarecs[drec].offset + datarecs[drec].width;
-                      if (end > data_extent) data_extent = end;
-                    }
+                  long end = datarecs[drec].offset + datarecs[drec].width;
+                  if (end > data_extent) data_extent = end;
                 }
-              int_syms[isym].value = data_total_early;
-              data_total_early += data_extent;
             }
+          if (data_extent == 0) continue; /* no ADATA, handled in pass 1 */
+          int_syms[isym].value = data_total_early;
+          data_total_early += data_extent;
         }
 
       /* Layout BSS symbols: assign each a unique offset using its size */
@@ -2763,11 +2807,133 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
         }
 
       tdata->data_size = (bfd_size_type) data_total_early;
+      /* Build data content buffer if there are ADATA records (e.g. SCONST
+         strings in a no-code object).  AGLOBL-only objects stay all-zeros
+         so data_content can remain NULL for those.  */
+      if (data_total_early > 0 && ndatarecs > 0)
+        {
+          bfd_byte *dbuf = (bfd_byte *) bfd_zalloc (abfd,
+                             (bfd_size_type) data_total_early);
+          if (dbuf)
+            {
+              int drec;
+              for (drec = 0; drec < ndatarecs; drec++)
+                {
+                  int si2 = datarecs[drec].sym_idx;
+                  long base = int_syms[si2].value;
+                  long off2  = datarecs[drec].offset;
+                  int  w    = datarecs[drec].width;
+                  long absoff = base + off2;
+                  if (absoff < 0 || absoff + w > data_total_early)
+                    continue;
+                  if (!datarecs[drec].is_sym_ref)
+                    {
+                      long v = datarecs[drec].val.ival;
+                      switch (w)
+                        {
+                        case 1: dbuf[absoff] = (unsigned char)v; break;
+                        case 2: dbuf[absoff]   = (unsigned char)v;
+                                dbuf[absoff+1] = (unsigned char)(v>>8);
+                                break;
+                        case 4: dbuf[absoff]   = (unsigned char)v;
+                                dbuf[absoff+1] = (unsigned char)(v>>8);
+                                dbuf[absoff+2] = (unsigned char)(v>>16);
+                                dbuf[absoff+3] = (unsigned char)(v>>24);
+                                break;
+                        case 8:
+                          {
+                            unsigned long lo = (unsigned long)v;
+                            int bi;
+                            for (bi = 0; bi < 8; bi++)
+                              dbuf[absoff+bi] = (unsigned char)(lo >> (bi*8));
+                            break;
+                          }
+                        }
+                    }
+                  /* sym ref: leave as 0, reloc will fix it */
+                }
+              tdata->data_content = dbuf;
+            }
+        }
       tdata->bss_size  = (bfd_size_type) bss_total_early;
       tdata->encoded   = 1;
       free (datarecs);
       free (progs_all);
       return 1;
+    }
+
+  /* ---- Tail-call optimization: CALL → JMP for Plan 9 startup ---- */
+  /* Plan 9's _main startup function ends with CALL _callmain after pushing a
+     fake $0 return address onto the stack.  Without converting this CALL to
+     JMP, the real CALL instruction pushes a second return address that shifts
+     _callmain's D_PARAM[0] (fn_ptr) by 4: EAX becomes 0, CALL *EAX faults
+     at pc=0x1 on native Plan 9.
+     With JMP (no return-address push), the earlier PUSHL $0 already sits at
+     [esp+0] and main_ptr at [esp+4], so after _callmain's SUB $0x50,%esp the
+     D_PARAM offsets are correct.
+     Critically, this conversion must ONLY apply to the specific startup
+     pattern and NOT to ordinary functions like write() that end with
+     CALL pwrite().  For ordinary functions the callee relies on the return
+     address pushed by CALL; converting to JMP makes the callee's RET pop an
+     argument value (e.g. fd=1) as the return address, sending PC to 0x1.
+     The startup pattern is identified by two conditions:
+       1. The containing function has auto_size == 0 (no local frame), found
+          by scanning back to the nearest P9AS_TEXT record's to.offset.
+       2. The immediately preceding instruction is PUSHL $0, i.e. a PUSHL
+          whose source is a P9D_CONST with offset == 0 and no symbol.
+          This is the fake return-address slot that _main explicitly pushes
+          before jumping to _callmain.
+     Both CALL and JMP to EXTERN use 5 bytes (E8/E9 + rel32), so span sizes
+     are unchanged by the substitution. */
+  for (i = 0; i < nprogs_all; i++)
+    {
+      if (progs_all[i].as == P9AS_CALL
+          && (progs_all[i].to.type == P9D_EXTERN
+              || progs_all[i].to.type == P9D_STATIC)
+          && progs_all[i].to.sym >= 0)
+        {
+          /* Check if this is the last instruction in its function:
+             next entry is start of new function (TEXT or synthetic ADJSP)
+             or end-of-array. */
+          int next = i + 1;
+          if (next >= nprogs_all
+              || progs_all[next].as == P9AS_TEXT
+              || progs_all[next].as == P9AS_ADJSP)
+            {
+              /* Additional guard: only convert when this is the startup
+                 CALL→JMP pattern (auto_size==0 + preceding PUSHL $0).
+                 Ordinary last CALLs (e.g. write→pwrite) must stay as CALL
+                 so the callee receives a valid return address on the stack. */
+              int ok_for_jmp = 0;
+
+              /* Condition 2: preceding instruction is PUSHL $0 */
+              if (i > 0 && progs_all[i-1].as == P9AS_PUSHL)
+                {
+                  const p9_Adr *fa = &progs_all[i-1].from;
+                  if (fa->type == P9D_CONST
+                      && fa->offset == 0
+                      && fa->sym < 0
+                      && fa->index == P9D_NONE)
+                    {
+                      /* Condition 1: scan back to find containing TEXT record
+                         and verify its auto_size (to.offset) is 0. */
+                      int j;
+                      for (j = i - 2; j >= 0; j--)
+                        {
+                          if (progs_all[j].as == P9AS_TEXT)
+                            {
+                              if (progs_all[j].to.offset == 0)
+                                ok_for_jmp = 1;
+                              break;
+                            }
+                        }
+                    }
+                }
+
+              if (ok_for_jmp)
+                progs_all[i].as = P9AS_JMP;
+            }
+        }
     }
 
   /* ---- Resolve D_BRANCH targets to pcond_idx ---- */
@@ -2918,25 +3084,39 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
         }
     }
 
-  /* ---- Layout data symbols ---- */
+  /* ---- Layout data symbols: AGLOBL-only first, then ADATA-backed ----
+     This matches native Plan 9 8l convention: zero-initialised AGLOBL
+     globals precede ADATA-initialised data within each object file.  */
   { int j;
+    /* Pass 1: AGLOBL-only symbols (zero-initialised, no ADATA records) */
     for (j = 0; j < n_int_syms; j++)
       {
-        if (int_syms[j].stype == P9_SDATA)
+        int k;
+        if (int_syms[j].stype != P9_SDATA) continue;
+        if (int_syms[j].bss_size <= 0) continue;
+        for (k = 0; k < ndatarecs; k++)
+          if (datarecs[k].sym_idx == j) break;
+        if (k < ndatarecs) continue; /* has ADATA, handled in pass 2 */
+        int_syms[j].value = data_total;
+        data_total       += int_syms[j].bss_size;
+      }
+    /* Pass 2: ADATA-backed symbols */
+    for (j = 0; j < n_int_syms; j++)
+      {
+        long maxend = 0;
+        int drec;
+        if (int_syms[j].stype != P9_SDATA) continue;
+        for (drec = 0; drec < ndatarecs; drec++)
           {
-            /* compute size from ADATA records */
-            long maxend = 0, k;
-            for (k = 0; k < ndatarecs; k++)
+            if (datarecs[drec].sym_idx == j)
               {
-                if (datarecs[k].sym_idx == j)
-                  {
-                    long end = datarecs[k].offset + datarecs[k].width;
-                    if (end > maxend) maxend = end;
-                  }
+                long end = datarecs[drec].offset + datarecs[drec].width;
+                if (end > maxend) maxend = end;
               }
-            int_syms[j].value    = data_total;
-            data_total          += maxend;
           }
+        if (maxend == 0) continue; /* no ADATA, already handled in pass 1 */
+        int_syms[j].value = data_total;
+        data_total       += maxend;
       }
     /* BSS symbols */
     for (j = 0; j < n_int_syms; j++)
