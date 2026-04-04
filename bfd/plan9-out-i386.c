@@ -2847,9 +2847,11 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
      by 4 and causing the wrong argument to be loaded as the function pointer
      (EAX becomes 0, so CALL *EAX faults at pc=0x1 on native Plan 9).
      Fix: replace CALL→JMP for any direct CALL that is the last real
-     instruction in its function (i.e. the next entry is P9AS_TEXT or
-     end-of-array).  Both CALL and JMP to EXTERN use 5 bytes (E8/E9 +
-     rel32), so the span sizes are unchanged. */
+     instruction in its function.  A function ends when the next progs_all
+     entry is P9AS_TEXT (new function start), P9AS_ADJSP (the synthetic
+     frame-setup always immediately follows P9AS_TEXT), or end-of-array.
+     Both CALL and JMP to EXTERN use 5 bytes (E8/E9 + rel32), so the span
+     sizes are unchanged. */
   for (i = 0; i < nprogs_all; i++)
     {
       if (progs_all[i].as == P9AS_CALL
@@ -2857,10 +2859,13 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
               || progs_all[i].to.type == P9D_STATIC)
           && progs_all[i].to.sym >= 0)
         {
-          /* Check if this is the last instruction in its function
-             (next entry is start of new function or end-of-array) */
+          /* Check if this is the last instruction in its function:
+             next entry is start of new function (TEXT or synthetic ADJSP)
+             or end-of-array. */
           int next = i + 1;
-          if (next >= nprogs_all || progs_all[next].as == P9AS_TEXT)
+          if (next >= nprogs_all
+              || progs_all[next].as == P9AS_TEXT
+              || progs_all[next].as == P9AS_ADJSP)
             progs_all[i].as = P9AS_JMP;
         }
     }

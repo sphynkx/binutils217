@@ -511,6 +511,47 @@ if { [regexp -nocase {-0x4|-4\b|fffffffc} $got_reloc] } {
     send_log "objdump -r output was:\n$got_reloc\n"
 }
 
+# -----------------------------------------------------------------------
+# Tests 28a-28b: Exact JMP offset checks for main9.8.
+#
+# main9.8 encodes _main as:
+#   0x00: mov %eax,_tos      (6 bytes: 89 05 + ABS32 field)
+#   0x06: mov $main,%eax     (5 bytes: b8 + ABS32 field)
+#   0x0b: push %eax          (1 byte: 50)
+#   0x0c: push $0x0          (2 bytes: 6a 00)
+#   0x0e: jmp _callmain      (5 bytes: e9 + PC32 field at 0x0f)
+#
+# The PC32 reloc displacement field is at offset 0x0f (E9 opcode + 1).
+# The linker writes: disp32 = _callmain_VMA - 4 - field_VMA
+# so CPU executes: field_VMA + 4 + disp32 = _callmain_VMA (correct).
+#
+# Checking the reloc is at 0x0f (not 0x0e) ensures the reloc targets
+# the displacement field and not the opcode byte; if the reloc were at
+# 0x0e the linker would overwrite the E9 opcode, producing a garbled JMP.
+# -----------------------------------------------------------------------
+
+# Test 28a: PC32 reloc in main9.8 must be at offset 0x0f (JMP displacement field).
+# The pattern "0000000f" (8 hex digits) must precede the PC32 reloc type.
+send_log "Testing: main9.8 PC32 reloc is at offset 0x0f (E9+1 displacement field)\n"
+if { [regexp {0000000f.*PC32} $got_reloc] } {
+    pass "main9.8 PC32 reloc at offset 0x0f (displacement field, not E9 opcode byte)"
+} else {
+    fail "main9.8 PC32 reloc not at expected offset 0x0f -- reloc may target wrong byte"
+    send_log "objdump -r output was:\n$got_reloc\n"
+}
+
+# Test 28b: main9.8 disassembly must show the JMP at offset 0xe.
+# The line "  e:.*e9" must appear in objdump -d output, confirming that
+# offset 0x0e contains the E9 opcode (i.e. the JMP is the last instruction
+# at exactly the expected position within _main's text).
+send_log "Testing: main9.8 disassembly shows JMP at offset 0xe (last instruction)\n"
+if { [regexp {\se:\s.*e9\s} $got_main9] || [regexp {0000000e:\s.*e9\s} $got_main9] } {
+    pass "main9.8 JMP (E9) at offset 0xe -- tail-call at correct position"
+} else {
+    fail "main9.8 JMP not found at offset 0xe -- CALL not converted or wrong position"
+    send_log "objdump -d output was:\n$got_main9\n"
+}
+
 # Test 29: The disassembly must NOT contain the bytes "ff e8" as a 2-byte
 # sequence in the .text disassembly.  "ff e8" decodes as LJMPF *%eax which
 # is an invalid far-jump instruction -- it indicates a missing instruction
@@ -790,4 +831,74 @@ if { [regexp {etext} $got_nm_exec] } {
     send_log "Output was: $got_nm_exec\n"
 }
 
+# -----------------------------------------------------------------------
+# Tests 47-50: Verify callmain.8 ADJSP auto-size and _callmain stack layout.
+#
+# _callmain has TEXT autosize=0x50 (80 bytes).  The BFD Plan 9 backend
+# synthesises a 'sub $0x50,%esp' (83 ec 50) at function entry.
+#
+# With JMP (not CALL) from _main:
+#   Before sub: [esp+0] = $0, [esp+4] = main_ptr, [esp+8..] = kernel args
+#   After sub $0x50:
+#     [esp+0x50] = $0
+#     [esp+0x54] = main_ptr  ← D_PARAM[0] → fn_ptr ✓
+#     [esp+0x58] = argc      ← D_PARAM[4] ✓
+#     [esp+0x5c] = argv      ← D_PARAM[8] ✓
+#
+# With CALL (the bug, now fixed):
+#   Return addr pushed by CALL shifts stack by 4:
+#     [esp+0x54] = $0 = 0    ← fn_ptr reads 0 → CALL *EAX = CALL 0 → pc=0x1
+#
+# These tests verify that:
+#   47. callmain.8 contains 'sub $0x50,%esp' (83 ec 50) — ADJSP synthesised
+#   48. callmain.8 contains 'mov 0x54(%esp),%e' — fn_ptr read at +0x54
+#   49. callmain.8 does NOT contain 'mov 0x50(%esp),%e' — NOT 0x50 (would be
+#       the wrong offset if CALL had been used instead of JMP)
+#   50. callmain.8 contains 'call *%e' (ff d0/d1/d2) — indirect call for main()
+# -----------------------------------------------------------------------
+
+# Test 47: callmain.8 synthesised ADJSP gives 'sub $0x50,%esp' (83 ec 50).
+send_log "Testing: callmain.8 has synthesised 'sub \$0x50,%%esp' (83 ec 50)\n"
+if { [regexp {83\s*ec\s*50} $got15] } {
+    pass "callmain.8 ADJSP synthesised as 'sub \$0x50,%%esp' (83 ec 50)"
+} else {
+    fail "callmain.8 missing ADJSP 'sub \$0x50,%%esp' -- autosize 0x50 not synthesised"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 48: callmain.8 loads fn_ptr from 0x54(%esp) — the D_PARAM[0] offset
+# for autosize 0x50 is 0 + 0x50 + 4 = 0x54.  With CALL instead of JMP,
+# [esp+0x54] would hold $0 (=0) and CALL *EAX would crash at pc=0x1.
+send_log "Testing: callmain.8 reads fn_ptr from 0x54(%%esp) (D_PARAM\[0\] with autosize 0x50)\n"
+if { [regexp {0x54\(.*esp\)} $got15] } {
+    pass "callmain.8 reads fn_ptr from 0x54(%%esp) — correct D_PARAM[0] offset"
+} else {
+    fail "callmain.8 missing '0x54(%%esp)' load — D_PARAM[0] offset wrong or missing"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 49: callmain.8 must NOT load fn_ptr from 0x50(%esp).
+# With CALL (buggy), the shifted stack would put $0 at [esp+0x54] and
+# main_ptr at [esp+0x58], but _callmain still reads from [esp+0x54] → $0 → crash.
+# 0x50(%esp) is where $0 lands with JMP; that should be read as argc-like slot
+# by _callmain only if main9.s had pushed a different value.  The absence of
+# '0x50(%%esp)' in function-pointer context confirms the layout is correct.
+# (callmain.8 may have 0x50 as part of the ADJSP immediate, not as a load,
+# so we just ensure the 0x50(%esp) addressing mode doesn't appear as a load.)
+send_log "Testing: callmain.8 does not load from 0x50(%%esp) (would be wrong if CALL used)\n"
+if { ![regexp {0x50\(.*esp\)} $got15] } {
+    pass "callmain.8 does not load from 0x50(%%esp) (stack layout correct for JMP)"
+} else {
+    fail "callmain.8 loads from 0x50(%%esp) -- potential stack layout mismatch (CALL vs JMP?)"
+    send_log "objdump -d output was:\n$got15\n"
+}
+
+# Test 50: callmain.8 must contain an indirect call (ff d0/d1/d2) to invoke main().
+send_log "Testing: callmain.8 has indirect call 'ff d[012]' to invoke main()\n"
+if { [regexp {ff\s*d[012]} $got15] } {
+    pass "callmain.8 has indirect CALL *reg to invoke main() function pointer"
+} else {
+    fail "callmain.8 missing indirect call -- main() function pointer not called"
+    send_log "objdump -d output was:\n$got15\n"
+}
 
