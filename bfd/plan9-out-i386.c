@@ -2628,9 +2628,13 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
           {
             p9_Adr from_a, to_a;
             int fr, tr;
-            if (nprogs >= progs_cap)
+            /* Need room for the instruction itself plus possibly a synthetic
+               epilogue ADJSP before RET when the function has a local frame. */
+            int need = (opcode == P9AS_RET && cur_auto_size > 0) ? 2 : 1;
+            if (nprogs + need > progs_cap)
               {
                 int nc = progs_cap ? progs_cap * 2 : 64;
+                while (nc < nprogs + need) nc *= 2;
                 p9_Prog *np = (p9_Prog *) realloc (progs,
                                 nc * sizeof(p9_Prog));
                 if (!np) goto out_err;
@@ -2660,6 +2664,26 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                   to_a.offset += cur_auto_size;
                 else if (to_a.type == P9D_PARAM)
                   to_a.offset += cur_auto_size + 4;
+              }
+
+            /* Synthesize epilogue ADJSP before RET when the function has a
+               local frame (cur_auto_size > 0).  Plan 9's 8l implicitly emits
+               "ADD $frame_size,%esp" (ADJSP -frame_size) before every RET in
+               such functions; .8 object files contain no explicit instruction
+               for this.  Without it, the RET pops a stale argument off the
+               stack instead of the caller's return address, causing a crash. */
+            if (opcode == P9AS_RET && cur_auto_size > 0)
+              {
+                memset (&progs[nprogs], 0, sizeof(p9_Prog));
+                progs[nprogs].as          = P9AS_ADJSP;
+                progs[nprogs].from.type   = P9D_CONST;
+                progs[nprogs].from.offset = -cur_auto_size; /* negative → ADDL */
+                progs[nprogs].from.sym    = -1;
+                progs[nprogs].from.index  = P9D_NONE;
+                progs[nprogs].from.scale  = 1;
+                progs[nprogs].back        = -1; /* synthetic: not in .8 stream */
+                progs[nprogs].pcond_idx   = -1;
+                nprogs++;
               }
 
             memset (&progs[nprogs], 0, sizeof(p9_Prog));

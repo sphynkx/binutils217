@@ -536,7 +536,7 @@ if { [regexp -nocase {PC32|pc32|pcrel|R_386_PC32} $got_reloc] } {
 # An addend of 0 would cause the call to land 4 bytes into the target.
 # objdump displays -4 as "-0x4", "-4", "0xfffffffc" (32-bit), or
 # "0xfffffffffffffffc" (64-bit host); all contain the pattern "fffffffc".
-if { [regexp -nocase {-0x4|-4\b|fffffffc} $got_reloc] } {
+if { [regexp -nocase -- {-0x4|-4\b|fffffffc} $got_reloc] } {
     pass "main9.8 PC32 reloc has correct addend -4 for E9 rel32 JMP"
 } else {
     fail "main9.8 PC32 reloc missing addend -4 -- JMP would land 4 bytes past target"
@@ -656,7 +656,7 @@ if { [regexp {00000035.*PC32} $got_callmain_r] } {
 # With pcrel_offset=TRUE and addend=-4:
 #   CPU target = sym_VMA + addend + 4 = sym_VMA ✓
 # Without addend=-4 (e.g., addend=0): target = sym_VMA + 4 (wrong).
-if { [regexp -nocase {-0x4|-4\b|fffffffc} $got_callmain_r] } {
+if { [regexp -nocase -- {-0x4|-4\b|fffffffc} $got_callmain_r] } {
     pass "callmain.8 PC32 reloc has correct addend -4"
 } else {
     fail "callmain.8 PC32 reloc missing addend -4 -- CALL target would be sym+4"
@@ -903,9 +903,9 @@ if { [regexp {83\s*ec\s*50} $got15] } {
 # [esp+0x54] would hold $0 (=0) and CALL *EAX would crash at pc=0x1.
 send_log "Testing: callmain.8 reads fn_ptr from 0x54(%%esp) (D_PARAM\[0\] with autosize 0x50)\n"
 if { [regexp {0x54\(.*esp\)} $got15] } {
-    pass "callmain.8 reads fn_ptr from 0x54(%%esp) — correct D_PARAM[0] offset"
+    pass "callmain.8 reads fn_ptr from 0x54(%%esp) -- correct D_PARAM\[0\] offset"
 } else {
-    fail "callmain.8 missing '0x54(%%esp)' load — D_PARAM[0] offset wrong or missing"
+    fail "callmain.8 missing '0x54(%%esp)' load -- D_PARAM\[0\] offset wrong or missing"
     send_log "objdump -d output was:\n$got15\n"
 }
 
@@ -926,7 +926,7 @@ if { ![regexp {0x50\(.*esp\)} $got15] } {
 }
 
 # Test 50: callmain.8 must contain an indirect call (ff d0/d1/d2) to invoke main().
-send_log "Testing: callmain.8 has indirect call 'ff d[012]' to invoke main()\n"
+send_log "Testing: callmain.8 has indirect call 'ff d\[012\]' to invoke main()\n"
 if { [regexp {ff\s*d[012]} $got15] } {
     pass "callmain.8 has indirect CALL *reg to invoke main() function pointer"
 } else {
@@ -1008,4 +1008,28 @@ if { [regexp {\se8\s} $got_write_stub] && ![regexp {\se9\s} $got_write_stub] } {
 } else {
     fail "write_stub.8 CALL pwrite wrong encoding (expected E8 CALL, not E9 JMP)"
     send_log "objdump -d output was:\n$got_write_stub\n"
+}
+
+# Test 55: exits.8 must have epilogue 'add $0x8,%esp' (83 c4 08) before 'ret' (c3).
+# Plan 9 8l implicitly generates "ADD $frame_size,%esp; RET" as the function epilogue
+# for any function with auto_size > 0.  Without the ADD, the RET pops a stale stack
+# argument as the return address, causing a crash.
+# exits.8 has auto_size=8, so the epilogue must include 83 c4 08 followed by c3.
+send_log "Testing: exits.8 has epilogue 'add \$0x8,%%esp' (83 c4 08) before ret\n"
+if { [regexp {83\s+c4\s+08} $got_exits_d] } {
+    pass "exits.8 has epilogue 'add \$0x8,%%esp' (83 c4 08) -- stack restored before ret"
+} else {
+    fail "exits.8 missing epilogue 'add \$0x8,%%esp' -- stack not restored before ret"
+    send_log "objdump -d output was:\n$got_exits_d\n"
+}
+
+# Test 56: callmain.8 must have epilogue 'add $0x50,%esp' (83 c4 50) before 'ret' (c3).
+# _callmain has auto_size=0x50 (80 bytes).  The epilogue restores the frame before
+# returning.  Without it the RET would pop a wrong value as the return address.
+send_log "Testing: callmain.8 has epilogue 'add \$0x50,%%esp' (83 c4 50) before ret\n"
+if { [regexp {83\s+c4\s+50} $got15] } {
+    pass "callmain.8 has epilogue 'add \$0x50,%%esp' (83 c4 50) -- stack restored before ret"
+} else {
+    fail "callmain.8 missing epilogue 'add \$0x50,%%esp' -- stack not restored before ret"
+    send_log "objdump -d output was:\n$got15\n"
 }
