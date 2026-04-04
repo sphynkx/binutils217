@@ -17,8 +17,6 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 
-#define DEBUG_PLAN9
-
 
 #define	BYTES_IN_WORD	4
 #undef TARGET_IS_BIG_ENDIAN_P
@@ -76,13 +74,58 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA. */
 #define MY_symbol_leading_char '\0'
 
 #define MY_BFD_TARGET
-#define MY_object_p MY(object_p)
-#define MY_write_object_contents MY(write_object_contents)
-/* Use custom symbol-table functions to safely handle Plan 9 exec format,
-   which has no a.out-compatible string table and can trigger a
-   stringsize-underflow heap overflow in the generic slurp path.  */
-#define MY_get_symtab_upper_bound MY(get_symtab_upper_bound)
-#define MY_canonicalize_symtab    MY(get_symtab)
+#define MY_object_p plan9_i386_object_p
+#define MY_write_object_contents plan9_i386_write_object_contents
+#define MY_get_symtab_upper_bound plan9_i386_get_symtab_upper_bound
+#define MY_canonicalize_symtab plan9_i386_canonicalize_symtab
+
+
+
+
+
+
+/* Start of symbols hook addition */
+#define MY_get_symbol_info plan9_i386_get_symbol_info
+#define MY_make_empty_symbol plan9_i386_make_empty_symbol
+#define MY_read_minisymbols _bfd_generic_read_minisymbols
+#define MY_minisymbol_to_symbol _bfd_generic_minisymbol_to_symbol
+#define MY_read_minisymbols plan9_i386_read_minisymbols
+#define MY_minisymbol_to_symbol plan9_i386_minisymbol_to_symbol
+
+
+
+asymbol *
+plan9_i386_make_empty_symbol (bfd *abfd)
+{
+	aout_symbol_type *sym;
+
+	// Very noisy - disabled.
+	//fprintf (stderr, "DBG P9 MAKE_EMPTY_SYMBOL\n");
+
+	sym = (aout_symbol_type *) bfd_zalloc (abfd, sizeof (aout_symbol_type));
+	if (sym == NULL)
+		return NULL;
+
+	sym->symbol.the_bfd = abfd;
+	return &sym->symbol;
+}
+
+
+void
+plan9_i386_get_symbol_info (bfd *abfd, asymbol *symbol, symbol_info *ret)
+{
+	// Very noisy - disabled.
+	//fprintf (stderr, "DBG P9 GET_SYMBOL_INFO: %s\n",
+	//	 symbol && symbol->name ? symbol->name : "(null)");
+	bfd_symbol_info (symbol, ret);
+}
+
+/* End of symbols hook addition */
+
+
+
+
+
 
 static void plan9_swap_exec_header_out (bfd *abfd,
                                         const struct internal_exec *execp,
@@ -161,7 +204,7 @@ plan9_i386_slurp_armap (bfd *abfd)
       mapdata = (struct areltdata *) _bfd_read_ar_hdr (abfd);
       if (mapdata == NULL)
         {
-          /* Header unreadable – treat this as wrong format.  */
+          /* Header unreadable -- treat this as wrong format.  */
           bfd_set_error (bfd_error_wrong_format);
           return FALSE;
         }
@@ -191,14 +234,194 @@ plan9_i386_slurp_armap (bfd *abfd)
 #undef N_SYMOFF
 #define N_SYMOFF(x)	( N_MAGIC(x) == QMAGIC ? N_DATOFF(x) + (x).a_data : N_DRELOFF(x) + (x).a_drsize )
 
+
+
+
+
+/* New hooks additions (till include of aout-target.h) */
+
+
+
+/* Start reloc hooks additions */
+
+static void
+MY (fixup_section_symbol_reloc) (bfd *abfd, arelent *rel)
+{
+  asymbol *sym;
+
+  if (rel == NULL || rel->howto == NULL || rel->sym_ptr_ptr == NULL)
+    return;
+  if (*(rel->sym_ptr_ptr) == NULL)
+    return;
+
+  sym = *(rel->sym_ptr_ptr);
+
+  /* Plan 9 i386: absolute relocs against local section symbols (.data/.bss)
+     come back from generic a.out decode with addend biased by section VMA.
+     Undo that bias here.  */
+  if (!rel->howto->pc_relative)
+    {
+      if (sym->section == obj_datasec (abfd))
+        rel->addend += obj_datasec (abfd)->vma;
+      else if (sym->section == obj_bsssec (abfd))
+        rel->addend += obj_bsssec (abfd)->vma;
+    }
+}
+
+static long
+MY (canonicalize_reloc) (bfd *abfd,
+                         asection *section,
+                         arelent **relptr,
+                         asymbol **symbols)
+{
+  long count;
+  long i;
+
+  count = NAME (aout, canonicalize_reloc) (abfd, section, relptr, symbols);
+  if (count <= 0)
+    return count;
+
+  for (i = 0; i < count; i++)
+    {
+      arelent *rel = relptr[i];
+
+      if (rel == NULL || rel->howto == NULL || rel->sym_ptr_ptr == NULL)
+        continue;
+      if (*(rel->sym_ptr_ptr) == NULL)
+        continue;
+
+      MY (fixup_section_symbol_reloc) (abfd, rel);
+    }
+
+  return count;
+}
+#define MY_canonicalize_reloc MY(canonicalize_reloc)
+
+
+
+/* // 2DEL - not working in process
+static void
+MY (relocatable_reloc) (reloc_howto_type *howto,
+                        bfd *output_bfd,
+                        arelent *rel,
+                        bfd_vma relocation,
+                        bfd_vma r_addr)
+{
+  asymbol *sym;
+
+  (void) relocation;
+  (void) r_addr;
+
+  if (rel == NULL || rel->sym_ptr_ptr == NULL)
+    return;
+  if (*(rel->sym_ptr_ptr) == NULL)
+    return;
+
+  sym = *(rel->sym_ptr_ptr);
+
+#ifdef DEBUG_PLAN9
+  fprintf (stderr,
+           "DBG PLAN9 RELOCATABLE_RELOC before: addr=%#lx addend=%#lx sym=%s flags=%#lx pc=%d size=%d\n",
+           (unsigned long) rel->address,
+           (unsigned long) rel->addend,
+           sym->name ? sym->name : "(null)",
+           (unsigned long) sym->flags,
+           howto ? (int) howto->pc_relative : -1,
+           howto ? (int) howto->size : -1);
+#endif
+
+  / * Plan 9 i386 fix:
+     section-symbol absolute relocs against .data/.bss carry an addend
+     biased by section VMA (e.g. .data-0x40).  Undo that before final
+     relocation is written/applied. * /
+  if (howto != NULL
+      && !howto->pc_relative
+      && sym->section == obj_datasec (output_bfd))
+    {
+      rel->addend += obj_datasec (output_bfd)->vma;
+#ifdef DEBUG_PLAN9
+      fprintf (stderr,
+               "DBG PLAN9 RELOCATABLE_RELOC after : addr=%#lx addend=%#lx sym=.data datavma=%#lx\n",
+               (unsigned long) rel->address,
+               (unsigned long) rel->addend,
+               (unsigned long) obj_datasec (output_bfd)->vma);
+#endif
+    }
+  else if (howto != NULL
+           && !howto->pc_relative
+           && sym->section == obj_bsssec (output_bfd))
+    {
+      rel->addend += obj_bsssec (output_bfd)->vma;
+#ifdef DEBUG_PLAN9
+      fprintf (stderr,
+               "DBG PLAN9 RELOCATABLE_RELOC after : addr=%#lx addend=%#lx sym=.bss bssvma=%#lx\n",
+               (unsigned long) rel->address,
+               (unsigned long) rel->addend,
+               (unsigned long) obj_bsssec (output_bfd)->vma);
+#endif
+    }
+}
+#define MY_relocatable_reloc MY(relocatable_reloc)
+*/
+
+
+/*
+static bfd_vma
+MY (section_reloc_base) (bfd *input_bfd, asection *input_section, asection *section, int r_pcrel)
+{
+  bfd_vma relocation;
+
+  relocation = (section->output_section->vma
+                + section->output_offset
+                - section->vma);
+
+  if (r_pcrel)
+    relocation += input_section->vma;
+
+  return relocation;
+}
+
+static bfd_vma
+MY (section_reloc_addend) (bfd *input_bfd, asection *section)
+{
+  if (section == obj_datasec (input_bfd))
+    return obj_datasec (input_bfd)->vma;
+  if (section == obj_bsssec (input_bfd))
+    return obj_bsssec (input_bfd)->vma;
+  return 0;
+}
+*/
+/* END reloc hooks additions */
+
+/*start add1 */
+static bfd_boolean MY (bfd_final_link) (bfd *abfd,
+					struct bfd_link_info *info);
+
+#define MY_bfd_final_link MY (bfd_final_link)
+/*end add1 */
 #include "aout-target.h"
+#include "safe-ctype.h"
+#include "aoutx-plan9-i386.h"
+
+/*start add2 */
+bfd_boolean MY (final_link) (bfd *abfd,
+			     struct bfd_link_info *info,
+			     void (*callback) (bfd *, file_ptr *, file_ptr *, file_ptr *));
+
+static bfd_boolean
+MY (bfd_final_link) (bfd *abfd, struct bfd_link_info *info)
+{
+  return MY (final_link) (abfd, info, MY_final_link_callback);
+}
+/*end add2 */
 
 static CONST struct aout_backend_data MY(backend_data) = {
 	0,	/* zmagic_contiguous */
 	1,	/* text_includes_header */
 	0,	/* entry_is_text_address */
 	0,	/* exec_hdr_flags */
-	0x1020,	/* default_text_vma */
+	0x1000,	/* default_text_vma: with text_includes_header=1, effective text VMA
+		   = default_text_vma + EXEC_BYTES_SIZE = TEXT_START_ADDR + 0x20 = 0x1020 */
 	MY_set_sizes,
 	0,	/* exec_header_not_counted */
 	0,	/* add_dynamic_symbols */
@@ -225,27 +448,7 @@ MY(write_object_contents) (bfd *abfd)
 	file_ptr text_end;
 
 
-/* DBG block start */
-#ifdef DEBUG_PLAN9
-  {
-    asection *s;
-    fprintf (stderr, "DBG BFD WRITE1: start=%#lx output_has_begun=%d\n",
-             (unsigned long) bfd_get_start_address (abfd),
-             (int) abfd->output_has_begun);
-    for (s = abfd->sections; s != NULL; s = s->next)
-      {
-        fprintf (stderr,
-                 "DBG BFD WRITE2: sec=%s vma=%#lx size=%#lx rawsize=%#lx filepos=%#lx flags=%#lx\n",
-                 s->name ? s->name : "(null)",
-                 (unsigned long) s->vma,
-                 (unsigned long) s->size,
-                 (unsigned long) s->rawsize,
-                 (unsigned long) s->filepos,
-                 (unsigned long) s->flags);
-      }
-  }
-#endif
-/* DBG block end */
+
 
 
 	/*
@@ -268,12 +471,15 @@ MY(write_object_contents) (bfd *abfd)
     {
       bfd_vma text_vma, data_vma, bss_vma;
 
-      text_vma = 0x1020;
-      data_vma = 0x2000;
-
-      /* Place bss after data; keep 0x1000 alignment like the rest of the format. */
-      bss_vma = data_vma + obj_datasec (abfd)->size;
-      bss_vma = (bss_vma + 0xfff) & ~((bfd_vma) 0xfff);
+      /* Plan 9 kernel maps text at TEXTADDR+EXEC_BYTES_SIZE = 0x1020 and
+	 data at the first page boundary after text ends:
+	 data_vma = (text_vma + text_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
+	 For small executables, text_vma = 0x1020 and text_size < 0xfe0,
+	 so data_vma = 0x2000.  */
+      text_vma = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
+      data_vma = (text_vma + obj_textsec (abfd)->size + TARGET_PAGE_SIZE - 1)
+		 & ~ (bfd_vma)(TARGET_PAGE_SIZE - 1);
+      bss_vma  = data_vma + obj_datasec (abfd)->size;
 
       obj_textsec (abfd)->vma = text_vma;
       obj_datasec (abfd)->vma = data_vma;
@@ -310,28 +516,26 @@ MY(write_object_contents) (bfd *abfd)
 			}
 		}
 
-		/* Plan 9 i386 executables: header magic 0x1eb, big-endian fields.
-		   IMPORTANT: a_text must describe the *gap* from text base (0x1020)
-		   to data base (0x2000), not a page-rounded text size, otherwise the
-		   loader will place data/bss at the wrong address.  */
+		  /* Plan 9 i386 executables: header magic 0x1eb, big-endian fields.
+		   a_text = code_size + EXEC_BYTES_SIZE (Plan 9 native convention).
+		   The kernel maps text at TEXTADDR (0x1000); the header occupies
+		   [TEXTADDR, TEXTADDR+EXEC_BYTES_SIZE) and code follows, so
+		   data_VMA = TEXTADDR + a_text = TEXTADDR + code_size + EXEC_BYTES_SIZE.
+		   In the file, data starts at offset a_text (= code_size + header).
+		   The symbol table is at file offset a_text + a_data.  */
 
 		if (bfd_get_arch (abfd) == bfd_arch_i386)
 		  {
 			/* Plan 9 exec magic for i386.  */
 			execp->a_info = 0x1eb;
 
-			/* Make header sizes consistent with fixed VMAs.  */
-			if (obj_textsec (abfd) != NULL && obj_datasec (abfd) != NULL)
-			  {
-				bfd_vma text_vma = obj_textsec (abfd)->vma;
-				bfd_vma data_vma = obj_datasec (abfd)->vma;
-
-				if (text_vma != 0 && data_vma > text_vma)
-				  execp->a_text = (bfd_vma) (data_vma - text_vma);
-				else
-				  execp->a_text = obj_textsec (abfd)->size;
-			  }
-			else if (obj_textsec (abfd) != NULL)
+			if (obj_textsec (abfd) != NULL)
+			  /* Native Plan 9 8l stores pure code size in a_text (header NOT
+			     counted).  The kernel loads text from file offset EXEC_BYTES_SIZE
+			     for a_text bytes, then data from file offset EXEC_BYTES_SIZE +
+			     a_text.  Including EXEC_BYTES_SIZE here made the kernel read data
+			     from 0x20 bytes past the actual data start, mapping symbol-table
+			     bytes into the data segment.  */
 			  execp->a_text = obj_textsec (abfd)->size;
 
 			execp->a_data = (obj_datasec (abfd) != NULL) ? obj_datasec (abfd)->size : 0;
@@ -342,10 +546,13 @@ MY(write_object_contents) (bfd *abfd)
 			execp->a_info = 0; /* fallback */
 		  }
 
-		//execp->a_syms = obj_sym_filepos (abfd) - N_SYMOFF (*execp);
-		execp->a_syms = 0;
-		execp->a_trsize = 0;
-		execp->a_drsize = 0;
+	if (obj_aout_external_sym_count (abfd) != 0)
+	  execp->a_syms = (obj_aout_external_sym_count (abfd)
+			   * sizeof (struct external_nlist));
+
+	execp->a_trsize = 0;
+	execp->a_drsize = 0;
+
 		execp->a_entry = bfd_get_start_address (abfd);
 
 		plan9_swap_exec_header_out (abfd, execp, &exec_bytes);
@@ -409,8 +616,6 @@ some_plan9_object_p (bfd *abfd,
 */
 	struct aout_data_struct *rawptr, *oldrawptr;
 	const bfd_target *result;
-	/* native_sym_bytes: original a_syms for native Plan 9 exec (0 otherwise). */
-	bfd_size_type native_sym_bytes = 0;
 
 	rawptr = (struct aout_data_struct  *) bfd_zalloc (abfd, sizeof (struct aout_data_struct ));
 	if (rawptr == NULL)
@@ -430,28 +635,8 @@ some_plan9_object_p (bfd *abfd,
 	/* Set the file flags */
 	abfd->flags = BFD_NO_FLAGS;
 	/* Setting of EXEC_P has been deferred to the bottom of this function */
-
-	/* For native Plan 9 exec (QMAGIC = 0x1eb), a_syms is the *byte-count* of
-	   the Plan 9-format native symbol table, NOT an a.out nlist byte count.
-	   Zero it BEFORE the flags check so the generic a.out code never sees it:
-	   aout_get_external_symbols would compute count=a_syms/12=83, allocate
-	   83*12=996 bytes, then bfd_bread(996-byte buffer, a_syms=1006, ...) which
-	   overflows the allocation and corrupts the malloc heap.
-	   The custom reader plan9_i386_slurp_native_symtab recovers the size as
-	   (obj_str_filepos - obj_sym_filepos) set later in this function.  */
-	if (N_MAGIC (*execp) == QMAGIC)
-	  {
-	    native_sym_bytes = execp->a_syms;
-	    execp->a_syms    = 0;   /* hide from generic a.out code */
-	  }
-
 	if (execp->a_syms)
 		abfd->flags |= HAS_LINENO | HAS_DEBUG | HAS_SYMS | HAS_LOCALS;
-
-	/* For native Plan 9 exec, set only HAS_SYMS|HAS_LOCALS (not
-	   HAS_LINENO/HAS_DEBUG) when a Plan 9 symbol table is present.  */
-	if (native_sym_bytes > 0)
-		abfd->flags |= HAS_SYMS | HAS_LOCALS;
 	if (N_DYNAMIC(*execp))
 		abfd->flags |= DYNAMIC;
 
@@ -469,11 +654,7 @@ some_plan9_object_p (bfd *abfd,
 	obj_reloc_entry_size (abfd) = 1;
 	obj_symbol_entry_size (abfd) = 1;
 */
-	/* For native Plan 9 exec the a_syms field is the byte-size of the
-	   Plan 9 symbol table, which is NOT in a.out nlist format.  Setting
-	   symcount to zero here lets the custom slurp determine the real count
-	   (or safely return -1 if the string table is absent).  */
-	bfd_get_symcount (abfd) = 0;
+	bfd_get_symcount (abfd) = execp->a_syms / sizeof (struct external_nlist);
 	obj_reloc_entry_size (abfd) = RELOC_STD_SIZE;
 	obj_symbol_entry_size (abfd) = EXTERNAL_NLIST_SIZE;
 
@@ -488,9 +669,16 @@ some_plan9_object_p (bfd *abfd,
 	if (! NAME(aout,make_sections) (abfd))
 		return NULL;
 
-	obj_textsec (abfd)->rawsize = execp->a_text;
+	obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
+	/* Native Plan 9 convention: a_text = pure code size (header NOT included).
+	   The kernel reads text from file[EXEC_BYTES_SIZE .. EXEC_BYTES_SIZE+a_text)
+	   and data from file[EXEC_BYTES_SIZE+a_text .. EXEC_BYTES_SIZE+a_text+a_data).
+	   So data file offset = EXEC_BYTES_SIZE + a_text, NOT just a_text.  */
+	obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + execp->a_text;
+	obj_sym_filepos (abfd) = obj_datasec (abfd)->filepos + execp->a_data;
+
 	obj_datasec (abfd)->rawsize = execp->a_data;
-	obj_bsssec  (abfd)->rawsize = execp->a_bss;
+	obj_bsssec (abfd)->rawsize = execp->a_bss;
 
 	/* Keep canonical section sizes in sync with rawsize.
      objdump/size use section->size, not rawsize.  */
@@ -512,63 +700,62 @@ some_plan9_object_p (bfd *abfd,
 	if (result == NULL)
 	  return NULL;
 
-	obj_sym_filepos(abfd) = N_SYMOFF(*execp);
-	obj_str_filepos(abfd) = N_STROFF(*execp);
+  /* The generic a.out callback uses N_TXTADDR/N_DATADDR which are
+     wrong for Plan 9 (they return 0 and 0x1000 respectively, based on
+     the generic OMAGIC/ZMAGIC rules and the 0x1eb magic).
+     Override with the correct Plan 9 i386 VMAs:
+       text: TEXTADDR + EXEC_BYTES_SIZE = 0x1000 + 32 = 0x1020
+             (header occupies 0x1000..0x101f, code starts at 0x1020)
+       data: page_align(TEXTADDR + EXEC_BYTES_SIZE + a_text)
+             = (0x1000 + 32 + a_text + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
+             For a_text < 0xfe0 (typical), this is always 0x2000.
+             Native Plan 9 8l maps data at the first 0x1000-page boundary
+             after text ends, matching what the kernel actually maps.
+       bss:  data_vma + a_data  */
+  obj_textsec (abfd)->vma = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
+  {
+    /* data_vma = page_align(TEXTADDR + EXEC_BYTES_SIZE + a_text)
+                = page_align(0x1020 + a_text).
+       For a_text < 0xfe0 (i.e. code_size < 0xfe0) this is always 0x2000.  */
+    bfd_vma data_vma = ((bfd_vma) TEXT_START_ADDR
+			+ EXEC_BYTES_SIZE    /* = 0x1020 */
+			+ execp->a_text      /* a_text = pure code_size */
+			+ TARGET_PAGE_SIZE - 1)
+		       & ~ (bfd_vma)(TARGET_PAGE_SIZE - 1);
+    /* = (0x1020 + a_text + 0xfff) & ~0xfff = 0x2000 for a_text < 0xfe0 */
+    obj_datasec (abfd)->vma = data_vma;
+    obj_bsssec  (abfd)->vma = data_vma + execp->a_data;
+  }
+  obj_textsec (abfd)->lma = obj_textsec (abfd)->vma;
+  obj_datasec (abfd)->lma = obj_datasec (abfd)->vma;
+  obj_bsssec  (abfd)->lma = obj_bsssec  (abfd)->vma;
 
-	/* For native Plan 9 exec (QMAGIC = 0x1eb, big-endian header):
-	   The QMAGIC macros assume a_text INCLUDES EXEC_BYTES_SIZE, but Plan 9's
-	   a_text is the pure code size; the header is a separate 32-byte block.
-	   Fix up all section sizes, VMAs, and file positions after the callback.  */
-	if (N_MAGIC (*execp) == QMAGIC)
-	  {
-	    bfd_vma data_vma;
+  /* The generic a.out callback recalculates section file positions and
+	   obj_sym_filepos using N_SYMOFF, which does not always match the
+	   Plan 9 0x1eb layout.  Re-assert the correct positions explicitly:
+	   text immediately after the fixed-size header (at EXEC_BYTES_SIZE),
+	   data at file offset EXEC_BYTES_SIZE + a_text (native Plan 9 convention:
+	   a_text = pure code_size, header NOT included in a_text),
+	   and symbols contiguously after data.  */
+  obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
+  obj_datasec (abfd)->filepos = EXEC_BYTES_SIZE + execp->a_text;
+  obj_sym_filepos (abfd) = obj_datasec (abfd)->filepos + execp->a_data;
+  obj_str_filepos (abfd) = obj_sym_filepos (abfd) + execp->a_syms;
 
-	    /* Text: correct size (callback set it to a_text - EXEC_BYTES_SIZE).  */
-	    obj_textsec (abfd)->size    = execp->a_text;
-	    obj_textsec (abfd)->rawsize = execp->a_text;
-	    /* filepos = EXEC_BYTES_SIZE, already set correctly by the callback.  */
+  /* Now that the segment addresses have been worked out, take a better
+     guess at whether the file is executable.  If the entry point
+     is within the text segment, assume it is.  (This makes files
+     executable even if their entry point address is 0, as long as
+     their text starts at zero.).
 
-	    /* Data: filepos = header + text.  */
-	    obj_datasec (abfd)->filepos = (file_ptr) EXEC_BYTES_SIZE
-	                                  + (file_ptr) execp->a_text;
+     This test had to be changed to deal with systems where the text segment
+     runs at a different location than the default.  The problem is that the
+     entry address can appear to be outside the text segment, thus causing an
+     erroneous conclusion that the file isn't executable.
 
-	    /* Data VMA = first page boundary after end of text VMA.  */
-	    data_vma = obj_textsec (abfd)->vma + execp->a_text;
-	    data_vma = (data_vma + TARGET_PAGE_SIZE - 1)
-	              & ~((bfd_vma) (TARGET_PAGE_SIZE - 1));
-	    obj_datasec (abfd)->vma = data_vma;
-	    obj_datasec (abfd)->lma = data_vma;
-	    obj_bsssec  (abfd)->vma = data_vma + execp->a_data;
-	    obj_bsssec  (abfd)->lma = data_vma + execp->a_data;
-
-	    /* Symbol table: header + text + data.
-	       Use native_sym_bytes (the original a_syms before we zeroed it
-	       to prevent generic a.out misinterpretation of the Plan 9 table).
-	       obj_str_filepos - obj_sym_filepos is what plan9_i386_slurp_native_symtab
-	       uses to determine the symbol table size.  */
-	    {
-	      file_ptr sym_off = (file_ptr) EXEC_BYTES_SIZE
-	                         + (file_ptr) execp->a_text
-	                         + (file_ptr) execp->a_data;
-	      obj_sym_filepos (abfd) = sym_off;
-	      obj_str_filepos (abfd) = sym_off + (file_ptr) native_sym_bytes;
-	    }
-	  }
-
-	/* Now that the segment addresses have been worked out, take a better
-		guess at whether the file is executable.  If the entry point
-		is within the text segment, assume it is.  (This makes files
-		executable even if their entry point address is 0, as long as
-		their text starts at zero.).
-
-		This test had to be changed to deal with systems where the text segment
-		runs at a different location than the default.  The problem is that the
-		entry address can appear to be outside the text segment, thus causing an
-		erroneous conclusion that the file isn't executable.
-
-		To fix this, we now accept any non-zero entry point as an indication of
-		executability.  This will work most of the time, since only the linker
-		sets the entry point, and that is likely to be non-zero for most systems.  */
+     To fix this, we now accept any non-zero entry point as an indication of
+     executability.  This will work most of the time, since only the linker
+     sets the entry point, and that is likely to be non-zero for most systems.  */
 
 	if (execp->a_entry != 0
 		|| (execp->a_entry >= obj_textsec(abfd)->vma
@@ -655,423 +842,349 @@ MY (object_p) (bfd *abfd)
     return 0;
 
   target = NAME (aout, some_aout_object_p) (abfd, &exec, MY (callback));
+  if (target != NULL && N_MAGIC (exec) == OMAGIC)
+    abfd->flags &= ~EXEC_P;
   return target;
 }
 
 
-static boolean
-putsym(bfd *abfd, int type, char *prefix, char *name, bfd_vma value)
-/*
-	bfd *abfd;
-	int type;
-	char *prefix;
-	char *name;
-	bfd_vma value;
-*/
+/* Skip the 2-byte big-endian pair suffix in Plan 9 'z'/'Z' (AHISTORY)
+   symbol-table records.  After the NUL-terminated file name, the linker
+   appends pairs of big-endian 2-byte values terminated by 0x0000.  Return
+   the updated pointer (pointing one past the terminator pair, or ep if the
+   terminator was not found before end-of-data).  */
+static unsigned char *
+plan9_skip_zrec_suffix (unsigned char *p, unsigned char *ep)
 {
-	int n;
-	char buf[5];
-
-	if(bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0)
-		return false;
-
-	bfd_h_put_32(abfd, value, buf);
-	buf[4] = type | 0x80;
-	if((int)bfd_write ((PTR) buf, (bfd_size_type) sizeof(buf), (bfd_size_type) 1, abfd) != sizeof(buf))
-		return false;
-	obj_sym_filepos (abfd) += sizeof(buf);
-
-	if(prefix != 0) {
-		n = strlen(prefix);
-		if((int)bfd_write ((PTR) prefix, (bfd_size_type) n, (bfd_size_type) 1, abfd) != n)
-			return false;
-		obj_sym_filepos (abfd) += n;
-	}
-
-	n = strlen(name)+1;
-	if((int)bfd_write ((PTR) name, (bfd_size_type) n, (bfd_size_type) 1, abfd) != n)
-		return false;
-	obj_sym_filepos (abfd) += n;
-
-	++obj_aout_external_sym_count (abfd);
-	return true;
+  while (p + 2 <= ep)
+    {
+      unsigned int pair = bfd_getb16 ((PTR) p);
+      p += 2;
+      if (pair == 0)
+        break;
+    }
+  return p;
 }
 
-
-/* Read the symbol table of a native Plan 9 exec (magic 0x1eb).
-   Each entry: 4-byte big-endian value, 1-byte type, null-terminated name.
-   Types with bit 7 set (>= 0x80) are Plan 9 symbols; others are stabs.
-   Defensive: checks that the table fits within the file before reading.  */
+/* Return non-zero if the first record in DATA..EP looks like a Plan 9
+   inline symbol record rather than an a.out external_nlist entry.
+   Plan 9 inline records begin with:
+     4-byte value | 1-byte type | NUL-terminated inline name
+   The type byte is alphabetic ('T', 't', 'D', 'd', 'B', 'b', 'f', 'm',
+   'p', 'a', 'z', ...), and non-z/Z records have a non-empty inline name.
+   external_nlist entries do not match that layout: byte 4 is n_type
+   (small numeric flags), not an alphabetic symbol code.  */
 static boolean
-plan9_i386_slurp_native_symtab (bfd *abfd)
+plan9_inline_symbol_p (unsigned char *data, unsigned char *ep)
 {
-  struct internal_exec *execp;
-  file_ptr          sympos;
-  bfd_size_type     sym_bytes;
-  bfd_byte         *sym_data;
-  const bfd_byte   *p, *end;
-  bfd_size_type     sym_count;
-  aout_symbol_type *cached;
-  bfd_size_type     i;
+  unsigned char stype;
+  unsigned char *name;
 
-  execp    = exec_hdr (abfd);
-  sympos   = obj_sym_filepos (abfd);
+  if (ep - data < 6)
+    return false;
 
-  /* Recover the native symbol table byte count from the file-position
-     difference set up by some_plan9_object_p.  We cannot use execp->a_syms
-     because it was zeroed to prevent generic a.out code (aout_get_external_symbols)
-     from trying to parse the Plan 9 table as nlist entries and overflowing the
-     heap.  obj_str_filepos - obj_sym_filepos holds the original value.  */
-  sym_bytes = (obj_str_filepos (abfd) > sympos)
-              ? (bfd_size_type) (obj_str_filepos (abfd) - sympos)
-              : 0;
+  stype = data[4] & ~0x80;
+  if (! ((stype >= 'A' && stype <= 'Z')
+	 || (stype >= 'a' && stype <= 'z')))
+    return false;
 
-  if (sym_bytes == 0)
-    return TRUE;
+  name = data + 5;
+  while (name < ep && *name != '\0')
+    name++;
 
-  /* Defensive bounds check: sympos + sym_bytes must not exceed file size.  */
-  {
-    bfd_size_type file_size = (bfd_size_type) bfd_get_size (abfd);
-    if (file_size != 0
-        && ((bfd_size_type) sympos >= file_size
-            || sym_bytes > file_size - (bfd_size_type) sympos))
-      {
-        bfd_set_error (bfd_error_file_truncated);
-        return FALSE;
-      }
-  }
+  if (name >= ep)
+    return false;
 
-  /* Use bfd_alloc so the buffer is freed automatically when BFD closes.
-     Symbol name pointers stored in cached[] remain valid for BFD lifetime.  */
-  sym_data = (bfd_byte *) bfd_alloc (abfd, sym_bytes);
-  if (sym_data == NULL)
-    return FALSE;
-
-  if (bfd_seek (abfd, sympos, SEEK_SET) != 0
-      || bfd_bread ((void *) sym_data, sym_bytes, abfd) != sym_bytes)
-    {
-      bfd_release (abfd, sym_data);
-      bfd_set_error (bfd_error_file_truncated);
-      return FALSE;
-    }
-
-  /* First pass: count entries (value + type + null-terminated name).  */
-  sym_count = 0;
-  p   = sym_data;
-  end = sym_data + sym_bytes;
-  while (p + 5 <= end)
-    {
-      const bfd_byte *np = p + 5;
-      while (np < end && *np != 0)
-        np++;
-      if (np >= end)
-        break;          /* No null terminator within bounds: stop.  */
-      sym_count++;
-      p = np + 1;
-    }
-
-  if (sym_count == 0)
-    return TRUE;
-
-  /* Use bfd_malloc (not bfd_zalloc/bfd_alloc) so that bfd_free_cached_info's
-     free(obj_aout_symbols(abfd)) is valid.  The sym_data buffer (bfd_alloc)
-     lives in the BFD object pool and stays valid until bfd_release frees it;
-     symbol name pointers into sym_data remain valid for the BFD's lifetime.  */
-  cached = (aout_symbol_type *) bfd_malloc (
-                (bfd_size_type) sym_count * sizeof (aout_symbol_type));
-  if (cached == NULL)
-    return FALSE;
-  memset (cached, 0, sym_count * sizeof (aout_symbol_type));
-
-  /* Second pass: fill canonical symbol entries.  */
-  p = sym_data;
-  i = 0;
-  while (i < sym_count && p + 5 <= end)
-    {
-      bfd_vma      value;
-      unsigned int type_byte;
-      const bfd_byte *np;
-      asection    *sec;
-
-      value     = bfd_getb32 (p);
-      type_byte = p[4];
-      np        = p + 5;
-      while (np < end && *np != 0)
-        np++;
-      if (np >= end)
-        break;
-
-      cached[i].symbol.the_bfd = abfd;
-      cached[i].symbol.name    = (const char *) (p + 5);
-      cached[i].symbol.flags   = 0;
-      sec = bfd_abs_section_ptr;
-
-      if (type_byte & 0x80)
-        {
-          /* Plan 9 symbol: lower 7 bits give the type character.
-             Plan 9 stores absolute VAs; BFD expects section-relative values
-             (nm displays value + section->vma).  Subtract the section VMA.  */
-          switch (type_byte & 0x7f)
-            {
-            case 'T':
-              sec = obj_textsec (abfd);
-              cached[i].symbol.flags = BSF_GLOBAL;
-              break;
-            case 't':
-              sec = obj_textsec (abfd);
-              cached[i].symbol.flags = BSF_LOCAL;
-              break;
-            case 'D':
-              sec = obj_datasec (abfd);
-              cached[i].symbol.flags = BSF_GLOBAL;
-              break;
-            case 'd':
-              sec = obj_datasec (abfd);
-              cached[i].symbol.flags = BSF_LOCAL;
-              break;
-            case 'B':
-              sec = obj_bsssec (abfd);
-              cached[i].symbol.flags = BSF_GLOBAL;
-              break;
-            case 'b':
-              sec = obj_bsssec (abfd);
-              cached[i].symbol.flags = BSF_LOCAL;
-              break;
-            default:    /* 'f' (filename), 'z' (source line), etc. */
-              cached[i].symbol.flags = BSF_DEBUGGING;
-              sec = bfd_abs_section_ptr;
-              break;
-            }
-        }
-      else
-        {
-          /* Stab / debug entry (type_byte < 0x80).  */
-          cached[i].symbol.flags = BSF_DEBUGGING;
-          sec = bfd_abs_section_ptr;
-        }
-
-      /* Plan 9 stores absolute VAs.  Convert to section-relative offset
-         (nm shows value + section->vma; BSF_DEBUGGING symbols keep their
-         raw value since it is not an address).  */
-      if (sec != bfd_abs_section_ptr
-          && !(cached[i].symbol.flags & BSF_DEBUGGING)
-          && value >= sec->vma)
-        cached[i].symbol.value = value - sec->vma;
-      else
-        cached[i].symbol.value = value;
-
-      cached[i].symbol.section = sec;
-      p = np + 1;
-      i++;
-    }
-
-  sym_count = i;
-  obj_aout_symbols (abfd)   = cached;
-  bfd_get_symcount (abfd)   = sym_count;
-
-  /* sym_data is allocated from the BFD object pool (bfd_alloc).  The symbol
-     name pointers in cached[] point into it and remain valid for the BFD's
-     lifetime.  Do NOT store sym_data in obj_aout_external_strings: that field
-     is expected to be a regular malloc() pointer and any generic cleanup code
-     that calls free(obj_aout_external_strings) would crash on a pool pointer.  */
-
-  return TRUE;
+  return (stype == 'z' || stype == 'Z' || name > data + 5);
 }
 
 static boolean
 MY(slurp_symbol_table) (bfd *abfd)
+/*
+     bfd *abfd;
+*/
 {
-  aout_symbol_type *cached;
-  bfd_size_type cached_size;
-  struct external_nlist *syms;
-  bfd_size_type sym_bytes;
-  bfd_size_type sym_count;
-  char *strings;
-  bfd_size_type str_size;
-  bfd_byte lenbuf[4];
-  bfd_size_type i;
-  struct internal_exec *execp;
-  file_ptr sympos;
-  file_ptr strpos;
+	aout_symbol_type *cached;
+	size_t cached_size;
+	unsigned char *syms, *p, *ep, *name;
+	int i, n, nsyms;
+	asection *sec;
 
-  /* been here, done that */
-  if (obj_aout_symbols (abfd) != NULL)
-    return true;
+	/* been here, done that */
+	if (obj_aout_symbols (abfd) != NULL)
+		return true;
 
-  execp = exec_hdr (abfd);
+	n = exec_hdr (abfd)->a_syms;
+	if (n == 0)
+		return true;
 
-  /* Native Plan 9 exec uses its own symbol table format (not a.out nlist).  */
-  if (N_MAGIC (*execp) == QMAGIC)
-    return plan9_i386_slurp_native_symtab (abfd);
+	/* Read the raw symbol bytes first.  Most Plan 9 files use the native
+	   inline symbol stream:
+	     4-byte big-endian value | 1-byte type | NUL-terminated inline name
+	   Some checked-in OMAGIC fixtures (e.g. reloc_test.o) use ordinary
+	   a.out external_nlist + string-table layout instead.  Prefer the
+	   inline format when the bytes actually look like inline records, and
+	   only fall back to external_nlist when they do not.  */
+	syms = (unsigned char *) bfd_malloc (n);
+	if (syms == NULL)
+		return false;
 
-  sym_bytes = execp->a_syms;
-  if (sym_bytes == 0)
-    return true;
+	if (bfd_seek (abfd, obj_sym_filepos (abfd), SEEK_SET) != 0
+	    || bfd_bread ((PTR) syms, n, abfd) != n)
+	{
+		free (syms);
+		return false;
+	}
 
-  /* Sanity: must be multiple of external nlist size.  */
-  if ((sym_bytes % EXTERNAL_NLIST_SIZE) != 0)
-    {
-      bfd_set_error (bfd_error_wrong_format);
-      return false;
-    }
+	if (! plan9_inline_symbol_p (syms, syms + n)
+	    && (bfd_size_type) n >= sizeof (struct external_nlist)
+	    && (bfd_size_type) n % sizeof (struct external_nlist) == 0)
+	{
+		struct external_nlist *esyms;
 
-  sym_count = sym_bytes / EXTERNAL_NLIST_SIZE;
+		esyms = (struct external_nlist *) syms;
 
-  sympos = obj_sym_filepos (abfd);
-  if (sympos == 0)
-    {
-      /* If backend didn't set it, fall back to a.out macro.  */
-      sympos = (file_ptr) N_SYMOFF (*execp);
-      obj_sym_filepos (abfd) = sympos;
-    }
+		{
+			/* external_nlist + string-table format.
+			   Read the string table and use the public
+			   NAME(aout, translate_symbol_table) to convert it.  */
+			bfd_size_type symcount = n / sizeof (struct external_nlist);
+			unsigned char *strtab;
+			bfd_size_type strsize;
 
-  /* String table position: usually immediately after symtab.  */
-  strpos = obj_str_filepos (abfd);
-  if (strpos == 0)
-    {
-      strpos = (file_ptr) N_STROFF (*execp);
-      obj_str_filepos (abfd) = strpos;
-    }
+			/* Read string table: 4-byte size header + string data.
+			   Allocate size+1 bytes; zero [0..3] so that n_strx==0 yields
+			   an empty string; read string payload into [4..strsize-1].  */
+			{
+				unsigned char sbuf[4];
 
-  /* Read external nlist array.  Keep it in tdata so linker can use it.  */
-  syms = (struct external_nlist *) bfd_malloc (sym_bytes);
-  if (syms == NULL)
-    return false;
+				if (bfd_seek (abfd, obj_str_filepos (abfd), SEEK_SET) != 0
+				    || bfd_bread ((PTR) sbuf, (bfd_size_type) 4, abfd) != 4)
+				{
+					free (syms);
+					return false;
+				}
+				strsize = bfd_h_get_32 (abfd, (PTR) sbuf);
+			}
 
-  if (bfd_seek (abfd, sympos, SEEK_SET) != 0
-      || bfd_bread ((void *) syms, sym_bytes, abfd) != sym_bytes)
-    {
-      free (syms);
-      return false;
-    }
+			if (strsize < 4)
+			{
+				free (syms);
+				return false;
+			}
 
-  /* Read string table length (big-endian 32-bit), then strings.  */
-  if (bfd_seek (abfd, strpos, SEEK_SET) != 0
-      || bfd_bread ((void *) lenbuf, (bfd_size_type) 4, abfd) != 4)
-    {
-      free (syms);
-      return false;
-    }
+			strtab = (unsigned char *) bfd_malloc (strsize + 1);
+			if (strtab == NULL)
+			{
+				free (syms);
+				return false;
+			}
+			memset (strtab, 0, 4);  /* n_strx==0 -> empty string */
 
-  str_size = bfd_getb32 (lenbuf);
+			if (bfd_seek (abfd, obj_str_filepos (abfd) + 4, SEEK_SET) != 0
+			    || bfd_bread ((PTR) (strtab + 4),
+					  strsize - 4, abfd) != strsize - 4)
+			{
+				free (strtab);
+				free (syms);
+				return false;
+			}
+			strtab[strsize] = '\0';
 
-  /* In a.out the length includes the 4-byte length itself.
-     Accept 0/4 as empty.  */
-  if (str_size < 4)
-    {
-      /* Treat as empty strings.  */
-      str_size = 0;
-      strings = NULL;
-    }
-  else
-    {
-      bfd_size_type payload = str_size - 4;
+			cached_size = symcount * sizeof (aout_symbol_type);
+			cached = (aout_symbol_type *) bfd_malloc (cached_size);
+			if (cached == NULL)
+			{
+				free (strtab);
+				free (syms);
+				return false;
+			}
+			memset (cached, 0, cached_size);
 
-      strings = (char *) bfd_malloc (payload);
-      if (strings == NULL)
-        {
-          free (syms);
-          return false;
-        }
+			if (! NAME (aout, translate_symbol_table)
+			      (abfd, cached, esyms, symcount,
+			       (char *) strtab, strsize, FALSE))
+			{
+				free (cached);
+				free (strtab);
+				free (syms);
+				return false;
+			}
 
-      if (payload != 0
-          && bfd_bread ((void *) strings, payload, abfd) != payload)
-        {
-          free (strings);
-          free (syms);
-          return false;
-        }
+			bfd_get_symcount (abfd) = symcount;
+			obj_aout_external_sym_count (abfd) = symcount;
+			obj_aout_symbols (abfd) = cached;
+			obj_aout_external_syms (abfd) = esyms;
+			obj_aout_external_strings (abfd) = (char *) strtab;
+			obj_aout_external_string_size (abfd) = strsize;
+			return true;
+		}
+	}
 
-      /* For convenience, keep external_string_size as payload bytes.  */
-      str_size = payload;
-    }
+	/* Plan 9 inline format: use the bytes we already read from
+	   obj_sym_filepos(abfd).  For Plan 9 0x1eb executables, obj_sym_filepos
+	   is restored after the generic a.out callback to
+	   EXEC_BYTES_SIZE + a_text + a_data.
+	   Each record: 4-byte big-endian value | 1-byte type | NUL-terminated
+	   name.
+	   Exception: 'z'/'Z' (AHISTORY) records carry an extra suffix of
+	   big-endian 2-byte pairs terminated by 0x0000 after the name.  */
+	p = syms;
+	ep = syms + n;
+	nsyms = 0;
 
-  /* Build cached canonical symbols.  */
-  cached_size = sym_count * sizeof (aout_symbol_type);
-  cached = (aout_symbol_type *) bfd_malloc (cached_size);
-  if (cached == NULL && cached_size != 0)
-    {
-      if (strings) free (strings);
-      free (syms);
-      return false;
-    }
-  if (cached_size != 0)
-    memset (cached, 0, cached_size);
+	/* Counting pass: scan the variable-length stream to count non-z/Z records. */
+	while (p < ep)
+	{
+		unsigned char stype;
 
-  for (i = 0; i < sym_count; i++)
-    {
-      unsigned long n_strx;
-      unsigned int type;
-      bfd_vma value;
-      asection *sec;
+		if (ep - p < 5)
+			break;
 
-      n_strx = bfd_getb32 (syms[i].e_strx);
-      type = syms[i].e_type[0];
-      value = bfd_getb32 (syms[i].e_value);
+		stype = p[4] & ~0x80;
+		p += 5;
 
-      cached[i].symbol.the_bfd = abfd;
-      cached[i].symbol.value = value;
+		while (p < ep && *p != '\0')
+			p++;
 
-      /* Name resolution.  */
-      if (strings == NULL || n_strx == 0)
-        {
-          cached[i].symbol.name = "";
-        }
-      else if (n_strx >= str_size)
-        {
-          /* Bad string index => wrong format.  */
-          cached[i].symbol.name = "";
-          /* You can also choose to fail hard here:
-             bfd_set_error (bfd_error_wrong_format); ... */
-        }
-      else
-        {
-          cached[i].symbol.name = strings + n_strx;
-        }
+		if (p >= ep)
+			break;
 
-      /* Section + flags.  Only handle the standard N_TYPE cases.  */
-      sec = bfd_abs_section_ptr;
+		p++;  /* skip NUL terminator */
 
-      switch (type & N_TYPE)
-        {
-        case N_TEXT:
-          sec = obj_textsec (abfd);
-          break;
-        case N_DATA:
-          sec = obj_datasec (abfd);
-          break;
-        case N_BSS:
-          sec = obj_bsssec (abfd);
-          break;
-        case N_UNDF:
-          sec = bfd_und_section_ptr;
-          break;
-        default:
-          /* Stabs/debug/etc: mark as debugging to keep BFD/linker sane.  */
-          cached[i].symbol.flags |= BSF_DEBUGGING;
-          sec = bfd_abs_section_ptr;
-          break;
-        }
+		if (stype == 'z' || stype == 'Z')
+		{
+			p = plan9_skip_zrec_suffix (p, ep);
+			continue;  /* z/Z records are not nm symbols */
+		}
 
-      cached[i].symbol.section = sec;
+		nsyms++;
+	}
 
-      if (type & N_EXT)
-        cached[i].symbol.flags |= BSF_GLOBAL;
-      else
-        cached[i].symbol.flags |= BSF_LOCAL;
-    }
+	bfd_get_symcount (abfd) = nsyms;
+	obj_aout_external_sym_count (abfd) = nsyms;
 
-  obj_aout_symbols (abfd) = cached;
-  bfd_get_symcount (abfd) = sym_count;
+	if (nsyms == 0)
+	{
+		obj_aout_symbols (abfd) = NULL;
+		free (syms);
+		return true;
+	}
 
-  /* Make generic a.out code happy: store external tables too.  */
-  obj_aout_external_syms (abfd) = syms;
-  obj_aout_external_sym_count (abfd) = sym_count;
-  obj_aout_external_strings (abfd) = strings;
-  obj_aout_external_string_size (abfd) = str_size;
+	cached_size = nsyms * sizeof (aout_symbol_type);
+	cached = (aout_symbol_type *) bfd_malloc (cached_size);
+	if (cached == NULL)
+	{
+		free (syms);
+		return false;
+	}
+	memset (cached, 0, cached_size);
 
-  return true;
+	/* Parsing pass: fill in cached[] for each non-z/Z record. */
+	p = syms;
+	i = 0;
+	while (p < ep && i < nsyms)
+	{
+		unsigned char stype;
+
+		if (ep - p < 5)
+			break;
+
+		cached[i].symbol.the_bfd = abfd;
+		cached[i].symbol.value = bfd_h_get_32 (abfd, p);
+		cached[i].symbol.name = NULL;
+		cached[i].symbol.flags = 0;
+		cached[i].symbol.section = bfd_und_section_ptr;
+
+		stype = (unsigned char) (p[4] & ~0x80);
+		p += 5;
+
+		name = p;
+		while (name < ep && *name != '\0')
+			name++;
+
+		if (name >= ep)
+			break;
+
+		if (stype == 'z' || stype == 'Z')
+		{
+			p = name + 1;
+			p = plan9_skip_zrec_suffix (p, ep);
+			continue;
+		}
+
+		cached[i].symbol.name = strdup ((char *) p);
+		if (cached[i].symbol.name == NULL)
+		{
+			free (cached);
+			free (syms);
+			return false;
+		}
+
+		sec = bfd_und_section_ptr;
+
+		switch (stype)
+		{
+		case 'T':
+		case 'L':
+			cached[i].symbol.flags = BSF_GLOBAL;
+			sec = obj_textsec (abfd);
+			break;
+
+		case 't':
+		case 'l':
+			cached[i].symbol.flags = BSF_LOCAL;
+			sec = obj_textsec (abfd);
+			break;
+
+		case 'D':
+			cached[i].symbol.flags = BSF_GLOBAL;
+			sec = obj_datasec (abfd);
+			break;
+
+		case 'd':
+			cached[i].symbol.flags = BSF_LOCAL;
+			sec = obj_datasec (abfd);
+			break;
+
+		case 'B':
+			cached[i].symbol.flags = BSF_GLOBAL;
+			sec = obj_bsssec (abfd);
+			break;
+
+		case 'b':
+			cached[i].symbol.flags = BSF_LOCAL;
+			sec = obj_bsssec (abfd);
+			break;
+
+		default:
+			sec = bfd_und_section_ptr;
+			cached[i].symbol.flags = 0;
+			break;
+		}
+
+		cached[i].symbol.section = sec;
+
+		if (sec == obj_textsec (abfd)
+		    || sec == obj_datasec (abfd)
+		    || sec == obj_bsssec (abfd))
+			cached[i].symbol.value -= sec->vma;
+
+		p = name + 1;
+		i++;
+	}
+
+	bfd_get_symcount (abfd) = i;
+	obj_aout_external_sym_count (abfd) = i;
+
+	obj_aout_symbols (abfd) = cached;
+	free (syms);
+	return true;
 }
+
+
+long
+plan9_i386_canonicalize_symtab (bfd *abfd, asymbol **location);
 
 long
 MY(get_symtab) (bfd *abfd, asymbol **location)
@@ -1094,7 +1207,7 @@ MY(get_symtab) (bfd *abfd, asymbol **location)
 }
 
 long
-MY(get_symtab_upper_bound) (bfd *abfd)
+plan9_i386_get_symtab_upper_bound (bfd *abfd)
 /*
      bfd *abfd;
 */
@@ -1103,6 +1216,78 @@ MY(get_symtab_upper_bound) (bfd *abfd)
 		return -1;
 
 	return (bfd_get_symcount (abfd)+1) * (sizeof (aout_symbol_type *));
+}
+
+
+long
+plan9_i386_canonicalize_symtab (bfd *abfd, asymbol **location)
+{
+	int i;
+	aout_symbol_type *s;
+
+	if (!MY(slurp_symbol_table) (abfd))
+		return -1;
+
+	s = obj_aout_symbols (abfd);
+	for (i = 0; i < (int) bfd_get_symcount (abfd); i++)
+		*(location++) = (asymbol *) (s++);
+	*location++ = 0;
+
+	return bfd_get_symcount (abfd);
+}
+
+
+long
+plan9_i386_read_minisymbols (bfd *abfd, bfd_boolean dynamic,
+			     void **minisymsp, unsigned int *sizep)
+{
+	long storage;
+	asymbol **syms;
+	long count;
+
+	if (dynamic)
+		return -1;
+
+	storage = plan9_i386_get_symtab_upper_bound (abfd);
+	if (storage <= 0)
+		return storage;
+
+	syms = (asymbol **) bfd_malloc (storage);
+	if (syms == NULL)
+		return -1;
+
+	count = plan9_i386_canonicalize_symtab (abfd, syms);
+	if (count < 0)
+	{
+		free (syms);
+		return -1;
+	}
+
+	*minisymsp = syms;
+	*sizep = sizeof (asymbol *);
+
+	return count;
+}
+
+
+asymbol *
+plan9_i386_minisymbol_to_symbol (bfd *abfd, bfd_boolean dynamic,
+				 const void *minisym, asymbol *store)
+{
+	asymbol *sym;
+
+	// Very noisy - disabled.
+	//fprintf (stderr, "DBG P9 MINISYM_TO_SYMBOL dynamic=%d\n", dynamic);
+
+	if (dynamic)
+		return NULL;
+
+	sym = *(asymbol * const *) minisym;
+	if (sym == NULL)
+		return NULL;
+
+	*store = *sym;
+	return store;
 }
 
 /* On Plan 9, the magic number is always in big-endian format.  */
@@ -1158,4 +1343,3 @@ const bfd_target MY(vec) =
 
   (PTR) MY_backend_data
 };
-

@@ -383,7 +383,7 @@ p9obj_slurp_symtab (bfd *abfd)
           else if (opcode == P9OBJ_ADATA)
             newsec = bfd_get_section_by_name (abfd, ".data");
           else if (opcode == P9OBJ_AGLOBL)
-            newsec = bfd_get_section_by_name (abfd, ".bss");
+            newsec = bfd_get_section_by_name (abfd, ".data");
 
           if (newsec != NULL)
             {
@@ -1400,7 +1400,8 @@ typedef struct p9_SymEntry
   int   stype;    /* STEXT / SDATA / SBSS / SXREF */
   long  value;    /* PC or data offset, assigned during span */
   int   version;  /* version for static disambiguation */
-  int   bss_size; /* for AGLOBL / SBSS */
+  int   bss_size; /* declared size from AGLOBL; used as data extent for P9_SDATA
+                     symbols with no ADATA records, and as BSS size for P9_SBSS */
 } p9_SymEntry;
 
 #define P9_NSYM   50    /* per Plan 9 8.out.h NSYM */
@@ -1804,29 +1805,58 @@ p9_doasm (p9_EncCtx *ctx, const p9_Prog *p, const p9_Prog *progs, int nprogs,
   int pre;
   long from_v;
 
-  if (p->as <= 0 || p->as >= P9AS_LAST) return;
+  if (p->as <= 0 || p->as >= P9AS_LAST)
+    return;
+
   o = &p9_optab[p->as];
-  if (o->ytab == NULL) return;  /* unimplemented opcode */
+  if (o->ytab == NULL)
+    return;  /* unimplemented opcode */
 
   /* Emit segment prefix if needed */
   pre = 0;
-  switch (p->from.type) {
-  case P9D_INDIR + P9D_CS: pre = 0x2e; break;
-  case P9D_INDIR + P9D_DS: pre = 0x3e; break;
-  case P9D_INDIR + P9D_ES: pre = 0x26; break;
-  case P9D_INDIR + P9D_FS: pre = 0x64; break;
-  case P9D_INDIR + P9D_GS: pre = 0x65; break;
-  }
-  if (pre) *ctx->andptr++ = (unsigned char) pre;
+  switch (p->from.type)
+    {
+    case P9D_INDIR + P9D_CS: pre = 0x2e; break;
+    case P9D_INDIR + P9D_DS: pre = 0x3e; break;
+    case P9D_INDIR + P9D_ES: pre = 0x26; break;
+    case P9D_INDIR + P9D_FS: pre = 0x64; break;
+    case P9D_INDIR + P9D_GS: pre = 0x65; break;
+    }
+  if (pre)
+    *ctx->andptr++ = (unsigned char) pre;
+
   pre = 0;
-  switch (p->to.type) {
-  case P9D_INDIR + P9D_CS: pre = 0x2e; break;
-  case P9D_INDIR + P9D_DS: pre = 0x3e; break;
-  case P9D_INDIR + P9D_ES: pre = 0x26; break;
-  case P9D_INDIR + P9D_FS: pre = 0x64; break;
-  case P9D_INDIR + P9D_GS: pre = 0x65; break;
-  }
-  if (pre) *ctx->andptr++ = (unsigned char) pre;
+  switch (p->to.type)
+    {
+    case P9D_INDIR + P9D_CS: pre = 0x2e; break;
+    case P9D_INDIR + P9D_DS: pre = 0x3e; break;
+    case P9D_INDIR + P9D_ES: pre = 0x26; break;
+    case P9D_INDIR + P9D_FS: pre = 0x64; break;
+    case P9D_INDIR + P9D_GS: pre = 0x65; break;
+    }
+  if (pre)
+    *ctx->andptr++ = (unsigned char) pre;
+
+  /* -----------------------------------------------------------------
+   * IMPORTANT Plan 9 semantic:
+   *   CALL sym(SB) / JMP sym(SB) are direct near call/jmp (E8/E9 rel32),
+   *   not indirect FF /2 or FF /4 through a register/memory.
+   *
+   * Our generic ytab matching sees P9D_EXTERN/P9D_STATIC as "Ym" and for
+   * CALL/JMP that can match the Zo_m form first (0xFF /2 or /4).
+   * Intercept symbol operands early and emit direct E8/E9 + rel32 reloc.
+   * ----------------------------------------------------------------- */
+  if ((p->as == P9AS_CALL || p->as == P9AS_JMP)
+      && (p->to.type == P9D_EXTERN || p->to.type == P9D_STATIC)
+      && p->to.sym >= 0 && p->to.sym < nsyms)
+    {
+      long fpc;
+      *ctx->andptr++ = (p->as == P9AS_CALL) ? 0xe8 : 0xe9;
+      fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
+      /* pcrel=1 => relocation is PC-relative; the field bytes are 0 */
+      p9_put4 (ctx, 0, p->to.sym, 1, fpc);
+      return;
+    }
 
   ft = p9_oclass (&p->from) * Ymax;
   tt = p9_oclass (&p->to)   * Ymax;
@@ -1848,21 +1878,23 @@ found:
     }
 
   /* Resolve from value for use in immediate fields */
-  { long fpc0 = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
+  {
+    long fpc0 = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
     if (p->from.sym >= 0 && p->from.sym < nsyms
         && (p->from.type == P9D_EXTERN || p->from.type == P9D_STATIC
             || p->from.type == P9D_ADDR))
-      { from_v = 0; /* reloc will handle it */ }
+      from_v = 0; /* reloc will handle it */
     else
       from_v = p->from.offset;
-    (void)fpc0;
+    (void) fpc0;
   }
   v = from_v;
 
   op = o->op[z];
   switch (t[2])
     {
-    case Zpseudo: break;
+    case Zpseudo:
+      break;
 
     case Zlit:
       for (; (op = o->op[z]) != 0; z++)
@@ -1876,10 +1908,12 @@ found:
 
     case Zaut_r:
       *ctx->andptr++ = 0x8d; /* leal */
-      { p9_Adr tmp = p->from;
+      {
+        p9_Adr tmp = p->from;
         tmp.type  = tmp.index;
         tmp.index = P9D_NONE;
-        p9_asmand (ctx, &tmp, p9_reg[p->to.type], syms, nsyms); }
+        p9_asmand (ctx, &tmp, p9_reg[p->to.type], syms, nsyms);
+      }
       break;
 
     case Zm_o:
@@ -1898,10 +1932,12 @@ found:
       break;
 
     case Zm_ibo:
-      { long tv = p->to.offset;
+      {
+        long tv = p->to.offset;
         *ctx->andptr++ = op;
         p9_asmand (ctx, &p->from, o->op[z+1], syms, nsyms);
-        *ctx->andptr++ = (unsigned char) tv; }
+        *ctx->andptr++ = (unsigned char) tv;
+      }
       break;
 
     case Zibo_m:
@@ -1926,12 +1962,16 @@ found:
     case Zil_rp:
       *ctx->andptr++ = op + p9_reg[p->to.type];
       if (o->prefix == Pe)
-        { *ctx->andptr++ = (unsigned char) v;
-          *ctx->andptr++ = (unsigned char)(v >> 8); }
+        {
+          *ctx->andptr++ = (unsigned char) v;
+          *ctx->andptr++ = (unsigned char) (v >> 8);
+        }
       else
-        { long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
-          int  sid = (p->from.sym >= 0) ? p->from.sym : -1;
-          p9_put4 (ctx, v, sid, 0, fpc); }
+        {
+          long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
+          int sid = (p->from.sym >= 0) ? p->from.sym : -1;
+          p9_put4 (ctx, v, sid, 0, fpc);
+        }
       break;
 
     case Zib_rr:
@@ -1946,44 +1986,61 @@ found:
     case Zil_:
       *ctx->andptr++ = op;
       if (o->prefix == Pe)
-        { *ctx->andptr++ = (unsigned char) v;
-          *ctx->andptr++ = (unsigned char)(v >> 8); }
+        {
+          *ctx->andptr++ = (unsigned char) v;
+          *ctx->andptr++ = (unsigned char) (v >> 8);
+        }
       else
-        { long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
-          p9_put4 (ctx, v, -1, 0, fpc); }
+        {
+          long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
+          p9_put4 (ctx, v, -1, 0, fpc);
+        }
       break;
 
     case Zm_ilo:
-      { long tv; int tsid;
+      {
+        long tv;
+        int tsid;
         tv   = p->to.offset;
         tsid = (p->to.sym >= 0) ? p->to.sym : -1;
         *ctx->andptr++ = op;
         p9_asmand (ctx, &p->from, o->op[z+1], syms, nsyms);
-        { long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
-          p9_put4 (ctx, tv, tsid, 0, fpc); } }
+        {
+          long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
+          p9_put4 (ctx, tv, tsid, 0, fpc);
+        }
+      }
       break;
 
     case Zilo_m:
       *ctx->andptr++ = op;
       p9_asmand (ctx, &p->to, o->op[z+1], syms, nsyms);
       if (o->prefix == Pe)
-        { *ctx->andptr++ = (unsigned char) v;
-          *ctx->andptr++ = (unsigned char)(v >> 8); }
+        {
+          *ctx->andptr++ = (unsigned char) v;
+          *ctx->andptr++ = (unsigned char) (v >> 8);
+        }
       else
-        { long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
-          int  sid = (p->from.sym >= 0) ? p->from.sym : -1;
-          p9_put4 (ctx, v, sid, 0, fpc); }
+        {
+          long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
+          int sid = (p->from.sym >= 0) ? p->from.sym : -1;
+          p9_put4 (ctx, v, sid, 0, fpc);
+        }
       break;
 
     case Zil_rr:
       *ctx->andptr++ = op;
       p9_asmand (ctx, &p->to, p9_reg[p->to.type], syms, nsyms);
       if (o->prefix == Pe)
-        { *ctx->andptr++ = (unsigned char) v;
-          *ctx->andptr++ = (unsigned char)(v >> 8); }
+        {
+          *ctx->andptr++ = (unsigned char) v;
+          *ctx->andptr++ = (unsigned char) (v >> 8);
+        }
       else
-        { long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
-          p9_put4 (ctx, v, -1, 0, fpc); }
+        {
+          long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
+          p9_put4 (ctx, v, -1, 0, fpc);
+        }
       break;
 
     case Z_rp:
@@ -2006,24 +2063,29 @@ found:
           long q_pc = progs[p->pcond_idx].pc;
           v = q_pc - p->pc - 2;
           if (v >= -128 && v <= 127)
-            { *ctx->andptr++ = op;
-              *ctx->andptr++ = (unsigned char) v; }
+            {
+              *ctx->andptr++ = op;
+              *ctx->andptr++ = (unsigned char) v;
+            }
           else
-            { v -= 6 - 2; /* short → long form delta */
+            {
+              v -= 6 - 2; /* short → long form delta */
               *ctx->andptr++ = 0x0f;
               *ctx->andptr++ = o->op[z+1];
               ctx->andptr[0] = (unsigned char) v;
-              ctx->andptr[1] = (unsigned char)(v >> 8);
-              ctx->andptr[2] = (unsigned char)(v >> 16);
-              ctx->andptr[3] = (unsigned char)(v >> 24);
-              ctx->andptr   += 4; }
+              ctx->andptr[1] = (unsigned char) (v >> 8);
+              ctx->andptr[2] = (unsigned char) (v >> 16);
+              ctx->andptr[3] = (unsigned char) (v >> 24);
+              ctx->andptr   += 4;
+            }
         }
       break;
 
     case Zcall:
       /* CALL – always long form (5 bytes); may need reloc */
       *ctx->andptr++ = op;
-      { long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
+      {
+        long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
         if (p->to.type == P9D_BRANCH && p->pcond_idx >= 0)
           {
             long q_pc = progs[p->pcond_idx].pc;
@@ -2032,10 +2094,10 @@ found:
           }
         else
           {
-            /* external symbol call */
-            int  sid = (p->to.sym >= 0) ? p->to.sym : -1;
+            int sid = (p->to.sym >= 0) ? p->to.sym : -1;
             p9_put4 (ctx, 0, sid, 1, fpc);
-          } }
+          }
+      }
       break;
 
     case Zjmp:
@@ -2045,24 +2107,29 @@ found:
           long q_pc = progs[p->pcond_idx].pc;
           v = q_pc - p->pc - 2;
           if (v >= -128 && v <= 127)
-            { *ctx->andptr++ = op;
-              *ctx->andptr++ = (unsigned char) v; }
+            {
+              *ctx->andptr++ = op;
+              *ctx->andptr++ = (unsigned char) v;
+            }
           else
-            { v -= 5 - 2;
+            {
+              v -= 5 - 2;
               *ctx->andptr++ = o->op[z+1]; /* 0xe9 long jmp */
               ctx->andptr[0] = (unsigned char) v;
-              ctx->andptr[1] = (unsigned char)(v >> 8);
-              ctx->andptr[2] = (unsigned char)(v >> 16);
-              ctx->andptr[3] = (unsigned char)(v >> 24);
-              ctx->andptr   += 4; }
+              ctx->andptr[1] = (unsigned char) (v >> 8);
+              ctx->andptr[2] = (unsigned char) (v >> 16);
+              ctx->andptr[3] = (unsigned char) (v >> 24);
+              ctx->andptr   += 4;
+            }
         }
       else
         {
-          /* JMP to external symbol */
           *ctx->andptr++ = 0xe9;
-          { long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
-            int  sid = (p->to.sym >= 0) ? p->to.sym : -1;
-            p9_put4 (ctx, 0, sid, 1, fpc); }
+          {
+            long fpc = ctx->cur_pc + (ctx->andptr - ctx->and_buf);
+            int sid = (p->to.sym >= 0) ? p->to.sym : -1;
+            p9_put4 (ctx, 0, sid, 1, fpc);
+          }
         }
       break;
 
@@ -2079,19 +2146,29 @@ found:
     case Zbyte:
       ctx->andptr[0] = (unsigned char) v;
       ctx->andptr++;
-      if (op > 1) { ctx->andptr[0] = (unsigned char)(v>>8); ctx->andptr++; }
-      if (op > 2) {
-        ctx->andptr[0] = (unsigned char)(v>>16); ctx->andptr++;
-        ctx->andptr[0] = (unsigned char)(v>>24); ctx->andptr++;
-      }
+      if (op > 1)
+        {
+          ctx->andptr[0] = (unsigned char) (v >> 8);
+          ctx->andptr++;
+        }
+      if (op > 2)
+        {
+          ctx->andptr[0] = (unsigned char) (v >> 16);
+          ctx->andptr++;
+          ctx->andptr[0] = (unsigned char) (v >> 24);
+          ctx->andptr++;
+        }
       break;
 
-    case Zmov: goto domov;
+    case Zmov:
+      goto domov;
     }
+
   return;
 
 domov:
-  { const unsigned char *mt;
+  {
+    const unsigned char *mt;
     for (mt = p9_ymovtab; *mt; mt += 8)
       if (p->as == mt[0]
           && p9_ycover[ft + mt[1]]
@@ -2100,7 +2177,11 @@ domov:
           switch (mt[3])
             {
             case 0: /* literal bytes */
-              { int zi; for (zi = 4; mt[zi] != YMOV_E; zi++) *ctx->andptr++ = mt[zi]; }
+              {
+                int zi;
+                for (zi = 4; mt[zi] != YMOV_E; zi++)
+                  *ctx->andptr++ = mt[zi];
+              }
               return;
             case 1: /* r→m 2-byte */
               *ctx->andptr++ = mt[4];
@@ -2111,15 +2192,18 @@ domov:
               p9_asmand (ctx, &p->from, mt[5], syms, nsyms);
               return;
             case 3: /* r→m 3-byte */
-              *ctx->andptr++ = mt[4]; *ctx->andptr++ = mt[5];
+              *ctx->andptr++ = mt[4];
+              *ctx->andptr++ = mt[5];
               p9_asmand (ctx, &p->to, mt[6], syms, nsyms);
               return;
             case 4: /* m→r 3-byte */
-              *ctx->andptr++ = mt[4]; *ctx->andptr++ = mt[5];
+              *ctx->andptr++ = mt[4];
+              *ctx->andptr++ = mt[5];
               p9_asmand (ctx, &p->from, mt[6], syms, nsyms);
               return;
             }
-        } }
+        }
+  }
   return;
 }
 
@@ -2167,10 +2251,12 @@ p9_read_zaddr (const unsigned char *p, bfd_size_type rem,
   if (t & P9OBJ_T_OFFSET)
     {
       if (c + 4 > rem) return -1;
-      a->offset = (long)((unsigned long)p[c]
-                       | ((unsigned long)p[c+1] << 8)
-                       | ((unsigned long)p[c+2] << 16)
-                       | ((unsigned long)p[c+3] << 24));
+      /* Sign-extend: on 64-bit hosts, casting via (int) ensures that
+         negative 32-bit values (e.g. D_AUTO -0x40) become negative longs. */
+      a->offset = (long)(int)((unsigned)p[c]
+                            | ((unsigned)p[c+1] << 8)
+                            | ((unsigned)p[c+2] << 16)
+                            | ((unsigned)p[c+3] << 24));
       c += 4;
     }
   if (t & P9OBJ_T_SYM)
@@ -2237,10 +2323,19 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
   int            ndatarecs = 0, datarecs_cap = 0;
 
   /* Current function context */
-  int cur_text_sym = -1;  /* index in int_syms of current ATEXT sym */
-  long text_pc     = 0;   /* cumulative PC across all functions      */
-  long data_total  = 0;   /* total .data bytes                       */
-  long bss_total   = 0;   /* total .bss bytes                        */
+  int cur_text_sym  = -1;  /* index in int_syms of current ATEXT sym */
+  long cur_auto_size = 0;  /* ATEXT to.offset frame size (for ADJSP synthesis) */
+  long text_pc      = 0;   /* cumulative PC across all functions      */
+  long data_total   = 0;   /* total .data bytes                       */
+  long bss_total    = 0;   /* total .bss bytes                        */
+
+  /* Function-relative instruction counter used for D_BRANCH resolution.
+     In Plan 9 .8 files, D_BRANCH target offsets are FUNCTION-RELATIVE
+     instruction indices: the ATEXT record itself is index 0, the first
+     real instruction is 1, the second is 2, and so on. They are NOT
+     byte offsets. This counter resets at each ATEXT and increments for
+     every subsequent non-ANAME record (including AHISTORY records).  */
+  int global_plan9_pc = 0;
 
   /* Encoding context */
   p9_EncCtx ctx;
@@ -2356,6 +2451,11 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
           {
             p9_Adr from_a, to_a;
             int fr, tr;
+
+            /* Reset function-relative PC so that D_BRANCH offsets
+               match progs[].back values within this function.  */
+            global_plan9_pc = 0;
+
             fr = p9_read_zaddr (buf + pos + 6, rem - 6,
                                  &from_a, h_symidx, 256);
             tr = p9_read_zaddr (buf + pos + 6 + (fr > 0 ? fr : 0),
@@ -2397,6 +2497,11 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                 /* value will be set to text_pc during span */
               }
 
+            /* Track frame auto-size for D_AUTO/D_PARAM adjustment.
+               In Plan 9 .8 format, ATEXT to.offset is the frame size and
+               no explicit ADJSP instruction is emitted by 8c/8a.  */
+            cur_auto_size = to_a.offset;
+
             /* Add the ATEXT prog */
             if (nprogs >= progs_cap)
               {
@@ -2411,12 +2516,37 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
             progs[nprogs].from = from_a;
             progs[nprogs].to   = to_a;
             progs[nprogs].pcond_idx = -1;
-            progs[nprogs].back = 2;
+            progs[nprogs].back = global_plan9_pc;  /* = 0 (function-relative) */
             /* Store function sym idx in a spare field for later */
             progs[nprogs].pc   = (cur_text_sym >= 0) ? cur_text_sym : -1;
             nprogs++;
+
+            /* Inject synthetic ADJSP from ATEXT auto-size.
+               8l synthesizes "ADJSP $frame_size" from ATEXT to.offset;
+               real libc .8 files have no explicit ADJSP instruction.  */
+            if (cur_auto_size > 0)
+              {
+                if (nprogs >= progs_cap)
+                  {
+                    progs_cap *= 2;
+                    p9_Prog *np = (p9_Prog *) realloc (progs,
+                                    progs_cap * sizeof(p9_Prog));
+                    if (!np) goto out_err;
+                    progs = np;
+                  }
+                memset (&progs[nprogs], 0, sizeof(p9_Prog));
+                progs[nprogs].as          = P9AS_ADJSP;
+                progs[nprogs].from.type   = P9D_CONST;  /* treat as immediate */
+                progs[nprogs].from.offset = cur_auto_size;
+                progs[nprogs].from.sym    = -1;
+                progs[nprogs].from.index  = P9D_NONE;
+                progs[nprogs].from.scale  = 1;
+                progs[nprogs].back        = -1;  /* synthetic: not in .8 stream */
+                progs[nprogs].pcond_idx   = -1;
+                nprogs++;
+              }
           }
-        /* ---- AGLOBL: BSS declaration ---- */
+        /* ---- AGLOBL: zero-initialized data declaration ---- */
         else if (opcode == P9OBJ_AGLOBL)
           {
             p9_Adr from_a, to_a;
@@ -2434,7 +2564,7 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                 if (int_syms[si].stype == P9_SXREF
                     || int_syms[si].stype == 0)
                   {
-                    int_syms[si].stype = P9_SBSS;
+                    int_syms[si].stype = P9_SDATA;
                     int_syms[si].value = 0; /* will be assigned later */
                   }
                 if (sz > int_syms[si].bss_size)
@@ -2498,9 +2628,13 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
           {
             p9_Adr from_a, to_a;
             int fr, tr;
-            if (nprogs >= progs_cap)
+            /* Need room for the instruction itself plus possibly a synthetic
+               epilogue ADJSP before RET when the function has a local frame. */
+            int need = (opcode == P9AS_RET && cur_auto_size > 0) ? 2 : 1;
+            if (nprogs + need > progs_cap)
               {
                 int nc = progs_cap ? progs_cap * 2 : 64;
+                while (nc < nprogs + need) nc *= 2;
                 p9_Prog *np = (p9_Prog *) realloc (progs,
                                 nc * sizeof(p9_Prog));
                 if (!np) goto out_err;
@@ -2516,16 +2650,53 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
                                  &to_a, h_symidx, 256);
             if (tr < 0) tr = 1;
 
+            /* Adjust D_AUTO and D_PARAM offsets for the synthesized ADJSP.
+               8l does this in span(): after ADJSP $frame, all D_AUTO
+               offsets are shifted +frame_size and D_PARAM by +frame_size+4
+               (x86 CALL pushes a return address before the first argument). */
+            if (cur_auto_size > 0)
+              {
+                if (from_a.type == P9D_AUTO)
+                  from_a.offset += cur_auto_size;
+                else if (from_a.type == P9D_PARAM)
+                  from_a.offset += cur_auto_size + 4;
+                if (to_a.type == P9D_AUTO)
+                  to_a.offset += cur_auto_size;
+                else if (to_a.type == P9D_PARAM)
+                  to_a.offset += cur_auto_size + 4;
+              }
+
+            /* Synthesize epilogue ADJSP before RET when the function has a
+               local frame (cur_auto_size > 0).  Plan 9's 8l implicitly emits
+               "ADD $frame_size,%esp" (ADJSP -frame_size) before every RET in
+               such functions; .8 object files contain no explicit instruction
+               for this.  Without it, the RET pops a stale argument off the
+               stack instead of the caller's return address, causing a crash. */
+            if (opcode == P9AS_RET && cur_auto_size > 0)
+              {
+                memset (&progs[nprogs], 0, sizeof(p9_Prog));
+                progs[nprogs].as          = P9AS_ADJSP;
+                progs[nprogs].from.type   = P9D_CONST;
+                progs[nprogs].from.offset = -cur_auto_size; /* negative → ADDL */
+                progs[nprogs].from.sym    = -1;
+                progs[nprogs].from.index  = P9D_NONE;
+                progs[nprogs].from.scale  = 1;
+                progs[nprogs].back        = -1; /* synthetic: not in .8 stream */
+                progs[nprogs].pcond_idx   = -1;
+                nprogs++;
+              }
+
             memset (&progs[nprogs], 0, sizeof(p9_Prog));
             progs[nprogs].as   = (short) opcode;
             progs[nprogs].from = from_a;
             progs[nprogs].to   = to_a;
-            progs[nprogs].back = 2;
+            progs[nprogs].back = global_plan9_pc;  /* function-relative index */
             progs[nprogs].pcond_idx = -1;
             nprogs++;
           }
 
         pos += 2 + 4 + (bfd_size_type)fsz + (bfd_size_type)tsz;
+        global_plan9_pc++;  /* count every non-ANAME record (function-relative) */
       }
     } /* end while */
 
@@ -2562,24 +2733,43 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
       int isym;
       unsigned int osym;
 
-      /* Layout data symbols from ADATA records */
+      /* Layout data symbols: AGLOBL-only globals first (matching native
+         Plan 9 8l convention where zero-initialised AGLOBL vars precede
+         ADATA-initialised data), then ADATA-backed symbols.
+         Pass 1 places symbols that have no ADATA records; pass 2 places
+         symbols that have at least one ADATA record.  */
+
+      /* Pass 1: AGLOBL-only symbols (zero-initialised, no ADATA records) */
       for (isym = 0; isym < n_int_syms; isym++)
         {
-          if (int_syms[isym].stype == P9_SDATA)
+          int drec;
+          if (int_syms[isym].stype != P9_SDATA) continue;
+          if (int_syms[isym].bss_size <= 0) continue;
+          /* skip if any ADATA record targets this symbol */
+          for (drec = 0; drec < ndatarecs; drec++)
+            if (datarecs[drec].sym_idx == isym) break;
+          if (drec < ndatarecs) continue;
+          int_syms[isym].value = data_total_early;
+          data_total_early += int_syms[isym].bss_size;
+        }
+
+      /* Pass 2: ADATA-backed symbols */
+      for (isym = 0; isym < n_int_syms; isym++)
+        {
+          long data_extent = 0;
+          int drec;
+          if (int_syms[isym].stype != P9_SDATA) continue;
+          for (drec = 0; drec < ndatarecs; drec++)
             {
-              long data_extent = 0;
-              int drec;
-              for (drec = 0; drec < ndatarecs; drec++)
+              if (datarecs[drec].sym_idx == isym)
                 {
-                  if (datarecs[drec].sym_idx == isym)
-                    {
-                      long end = datarecs[drec].offset + datarecs[drec].width;
-                      if (end > data_extent) data_extent = end;
-                    }
+                  long end = datarecs[drec].offset + datarecs[drec].width;
+                  if (end > data_extent) data_extent = end;
                 }
-              int_syms[isym].value = data_total_early;
-              data_total_early += data_extent;
             }
+          if (data_extent == 0) continue; /* no ADATA, handled in pass 1 */
+          int_syms[isym].value = data_total_early;
+          data_total_early += data_extent;
         }
 
       /* Layout BSS symbols: assign each a unique offset using its size */
@@ -2617,11 +2807,133 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
         }
 
       tdata->data_size = (bfd_size_type) data_total_early;
+      /* Build data content buffer if there are ADATA records (e.g. SCONST
+         strings in a no-code object).  AGLOBL-only objects stay all-zeros
+         so data_content can remain NULL for those.  */
+      if (data_total_early > 0 && ndatarecs > 0)
+        {
+          bfd_byte *dbuf = (bfd_byte *) bfd_zalloc (abfd,
+                             (bfd_size_type) data_total_early);
+          if (dbuf)
+            {
+              int drec;
+              for (drec = 0; drec < ndatarecs; drec++)
+                {
+                  int si2 = datarecs[drec].sym_idx;
+                  long base = int_syms[si2].value;
+                  long off2  = datarecs[drec].offset;
+                  int  w    = datarecs[drec].width;
+                  long absoff = base + off2;
+                  if (absoff < 0 || absoff + w > data_total_early)
+                    continue;
+                  if (!datarecs[drec].is_sym_ref)
+                    {
+                      long v = datarecs[drec].val.ival;
+                      switch (w)
+                        {
+                        case 1: dbuf[absoff] = (unsigned char)v; break;
+                        case 2: dbuf[absoff]   = (unsigned char)v;
+                                dbuf[absoff+1] = (unsigned char)(v>>8);
+                                break;
+                        case 4: dbuf[absoff]   = (unsigned char)v;
+                                dbuf[absoff+1] = (unsigned char)(v>>8);
+                                dbuf[absoff+2] = (unsigned char)(v>>16);
+                                dbuf[absoff+3] = (unsigned char)(v>>24);
+                                break;
+                        case 8:
+                          {
+                            unsigned long lo = (unsigned long)v;
+                            int bi;
+                            for (bi = 0; bi < 8; bi++)
+                              dbuf[absoff+bi] = (unsigned char)(lo >> (bi*8));
+                            break;
+                          }
+                        }
+                    }
+                  /* sym ref: leave as 0, reloc will fix it */
+                }
+              tdata->data_content = dbuf;
+            }
+        }
       tdata->bss_size  = (bfd_size_type) bss_total_early;
       tdata->encoded   = 1;
       free (datarecs);
       free (progs_all);
       return 1;
+    }
+
+  /* ---- Tail-call optimization: CALL → JMP for Plan 9 startup ---- */
+  /* Plan 9's _main startup function ends with CALL _callmain after pushing a
+     fake $0 return address onto the stack.  Without converting this CALL to
+     JMP, the real CALL instruction pushes a second return address that shifts
+     _callmain's D_PARAM[0] (fn_ptr) by 4: EAX becomes 0, CALL *EAX faults
+     at pc=0x1 on native Plan 9.
+     With JMP (no return-address push), the earlier PUSHL $0 already sits at
+     [esp+0] and main_ptr at [esp+4], so after _callmain's SUB $0x50,%esp the
+     D_PARAM offsets are correct.
+     Critically, this conversion must ONLY apply to the specific startup
+     pattern and NOT to ordinary functions like write() that end with
+     CALL pwrite().  For ordinary functions the callee relies on the return
+     address pushed by CALL; converting to JMP makes the callee's RET pop an
+     argument value (e.g. fd=1) as the return address, sending PC to 0x1.
+     The startup pattern is identified by two conditions:
+       1. The containing function has auto_size == 0 (no local frame), found
+          by scanning back to the nearest P9AS_TEXT record's to.offset.
+       2. The immediately preceding instruction is PUSHL $0, i.e. a PUSHL
+          whose source is a P9D_CONST with offset == 0 and no symbol.
+          This is the fake return-address slot that _main explicitly pushes
+          before jumping to _callmain.
+     Both CALL and JMP to EXTERN use 5 bytes (E8/E9 + rel32), so span sizes
+     are unchanged by the substitution. */
+  for (i = 0; i < nprogs_all; i++)
+    {
+      if (progs_all[i].as == P9AS_CALL
+          && (progs_all[i].to.type == P9D_EXTERN
+              || progs_all[i].to.type == P9D_STATIC)
+          && progs_all[i].to.sym >= 0)
+        {
+          /* Check if this is the last instruction in its function:
+             next entry is start of new function (TEXT or synthetic ADJSP)
+             or end-of-array. */
+          int next = i + 1;
+          if (next >= nprogs_all
+              || progs_all[next].as == P9AS_TEXT
+              || progs_all[next].as == P9AS_ADJSP)
+            {
+              /* Additional guard: only convert when this is the startup
+                 CALL→JMP pattern (auto_size==0 + preceding PUSHL $0).
+                 Ordinary last CALLs (e.g. write→pwrite) must stay as CALL
+                 so the callee receives a valid return address on the stack. */
+              int ok_for_jmp = 0;
+
+              /* Condition 2: preceding instruction is PUSHL $0 */
+              if (i > 0 && progs_all[i-1].as == P9AS_PUSHL)
+                {
+                  const p9_Adr *fa = &progs_all[i-1].from;
+                  if (fa->type == P9D_CONST
+                      && fa->offset == 0
+                      && fa->sym < 0
+                      && fa->index == P9D_NONE)
+                    {
+                      /* Condition 1: scan back to find containing TEXT record
+                         and verify its auto_size (to.offset) is 0. */
+                      int j;
+                      for (j = i - 2; j >= 0; j--)
+                        {
+                          if (progs_all[j].as == P9AS_TEXT)
+                            {
+                              if (progs_all[j].to.offset == 0)
+                                ok_for_jmp = 1;
+                              break;
+                            }
+                        }
+                    }
+                }
+
+              if (ok_for_jmp)
+                progs_all[i].as = P9AS_JMP;
+            }
+        }
     }
 
   /* ---- Resolve D_BRANCH targets to pcond_idx ---- */
@@ -2681,16 +2993,34 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
     }
 
   /* Now resolve branch targets and iterate */
-  /* First, resolve D_BRANCH by finding target PC */
+  /* Resolve D_BRANCH target offsets to indices in progs_all[].
+     D_BRANCH.offset is FUNCTION-RELATIVE instruction index (ATEXT=0, first real=1...).
+     We stored this function-relative index in progs_all[j].back.
+     IMPORTANT: search only within the current function to avoid matching the same
+     back value from a different function (global_plan9_pc resets to 0 at each ATEXT,
+     so back values are not unique across functions when multiple .8 files are linked).  */
   for (i = 0; i < nprogs_all; i++)
     {
       if (progs_all[i].to.type == P9D_BRANCH)
         {
           long target_pc = progs_all[i].to.offset;
           int j, best = -1;
-          for (j = 0; j < nprogs_all; j++)
+          int func_start, func_end;
+
+          /* Find the start of the current function: walk back to nearest ATEXT.  */
+          func_start = i;
+          while (func_start > 0 && progs_all[func_start].as != P9AS_TEXT)
+            func_start--;
+
+          /* Find the end of the current function: first ATEXT after i (exclusive).  */
+          func_end = i + 1;
+          while (func_end < nprogs_all && progs_all[func_end].as != P9AS_TEXT)
+            func_end++;
+
+          /* Search only within [func_start, func_end).  */
+          for (j = func_start; j < func_end; j++)
             {
-              if (progs_all[j].pc == target_pc)
+              if (progs_all[j].back == target_pc)
                 { best = j; break; }
             }
           progs_all[i].pcond_idx = best;
@@ -2754,25 +3084,39 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
         }
     }
 
-  /* ---- Layout data symbols ---- */
+  /* ---- Layout data symbols: AGLOBL-only first, then ADATA-backed ----
+     This matches native Plan 9 8l convention: zero-initialised AGLOBL
+     globals precede ADATA-initialised data within each object file.  */
   { int j;
+    /* Pass 1: AGLOBL-only symbols (zero-initialised, no ADATA records) */
     for (j = 0; j < n_int_syms; j++)
       {
-        if (int_syms[j].stype == P9_SDATA)
+        int k;
+        if (int_syms[j].stype != P9_SDATA) continue;
+        if (int_syms[j].bss_size <= 0) continue;
+        for (k = 0; k < ndatarecs; k++)
+          if (datarecs[k].sym_idx == j) break;
+        if (k < ndatarecs) continue; /* has ADATA, handled in pass 2 */
+        int_syms[j].value = data_total;
+        data_total       += int_syms[j].bss_size;
+      }
+    /* Pass 2: ADATA-backed symbols */
+    for (j = 0; j < n_int_syms; j++)
+      {
+        long maxend = 0;
+        int drec;
+        if (int_syms[j].stype != P9_SDATA) continue;
+        for (drec = 0; drec < ndatarecs; drec++)
           {
-            /* compute size from ADATA records */
-            long maxend = 0, k;
-            for (k = 0; k < ndatarecs; k++)
+            if (datarecs[drec].sym_idx == j)
               {
-                if (datarecs[k].sym_idx == j)
-                  {
-                    long end = datarecs[k].offset + datarecs[k].width;
-                    if (end > maxend) maxend = end;
-                  }
+                long end = datarecs[drec].offset + datarecs[drec].width;
+                if (end > maxend) maxend = end;
               }
-            int_syms[j].value    = data_total;
-            data_total          += maxend;
           }
+        if (maxend == 0) continue; /* no ADATA, already handled in pass 1 */
+        int_syms[j].value = data_total;
+        data_total       += maxend;
       }
     /* BSS symbols */
     for (j = 0; j < n_int_syms; j++)
@@ -2942,7 +3286,6 @@ out_err:
 }
 
 
-
 static bfd_boolean
 plan9_out_i386_mkobject (bfd *abfd)
 {
@@ -3046,6 +3389,17 @@ plan9_out_i386_object_p (bfd *abfd)
       /* Flag contents as present (size > 0 sections) */
       if (td2->text_size == 0) text_sec->flags &= ~SEC_HAS_CONTENTS;
       if (td2->data_size == 0) data_sec->flags &= ~SEC_HAS_CONTENTS;
+      /* Expose relocations so the linker will apply them */
+      if (td2->text_nrelocs > 0)
+        {
+          text_sec->flags |= SEC_RELOC;
+          text_sec->reloc_count = td2->text_nrelocs;
+        }
+      if (td2->data_nrelocs > 0)
+        {
+          data_sec->flags |= SEC_RELOC;
+          data_sec->reloc_count = td2->data_nrelocs;
+        }
     }
 
   return abfd->xvec;
@@ -3087,9 +3441,11 @@ static reloc_howto_type plan9_out_i386_howto_table[] =
   /* 0 – absolute 32-bit */
   HOWTO (0, 0, 2, 32, FALSE, 0, complain_overflow_dont,
          NULL, "ABS32", FALSE, 0, 0xffffffff, FALSE),
-  /* 1 – PC-relative 32-bit (call/jmp; addend = -4 already in instr) */
+  /* 1 – PC-relative 32-bit (call/jmp rel32; addend = -4, pcrel_offset = TRUE)
+     BFD formula: field = sym_VMA + addend - (sec_VMA + r->address)
+     CPU: (sec_VMA + r->address + 4) + field = sym_VMA + addend + 4 = sym_VMA */
   HOWTO (1, 0, 2, 32, TRUE,  0, complain_overflow_dont,
-         NULL, "PC32",  FALSE, 0, 0xffffffff, FALSE),
+         NULL, "PC32",  FALSE, 0, 0xffffffff, TRUE),
 };
 
 static reloc_howto_type *
@@ -3123,6 +3479,10 @@ plan9_out_i386_canonicalize_reloc (bfd *abfd, asection *sec,
   struct plan9_out_i386_reloc *recs = NULL;
   unsigned int n = 0, i;
 
+  /* Ensure symbol table (and sym_ptrs[]) is populated */
+  if (!p9obj_slurp_symtab (abfd))
+    return -1;
+
   if (strcmp (sec->name, ".text") == 0)
     { recs = td->text_relocs; n = td->text_nrelocs; }
   else if (strcmp (sec->name, ".data") == 0)
@@ -3143,7 +3503,11 @@ plan9_out_i386_canonicalize_reloc (bfd *abfd, asection *sec,
       else
         { relpp[i] = NULL; continue; }
       r->address     = (bfd_vma) recs[i].section_offset;
-      r->addend      = 0;
+      /* PC-relative call/jmp: the field already holds 0; BFD will compute
+         field = sym_VMA + addend - (sec_VMA + r->address)
+         CPU sees: (sec_VMA + r->address + 4) + field = sym_VMA + addend + 4
+         With addend = -4: CPU target = sym_VMA (correct). */
+      r->addend      = recs[i].pc_relative ? -4 : 0;
       r->howto       = &plan9_out_i386_howto_table[recs[i].pc_relative ? 1 : 0];
       relpp[i] = r;
     }
