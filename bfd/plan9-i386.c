@@ -472,9 +472,13 @@ MY(write_object_contents) (bfd *abfd)
       bfd_vma text_vma, data_vma, bss_vma;
 
       /* Plan 9 kernel maps text at TEXTADDR+EXEC_BYTES_SIZE = 0x1020 and
-	 data at TEXTADDR + a_text = 0x1020 + text_code_size (no page gap).  */
+	 data at the first page boundary after text ends:
+	 data_vma = (text_vma + text_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
+	 For small executables, text_vma = 0x1020 and text_size < 0xfe0,
+	 so data_vma = 0x2000.  */
       text_vma = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
-      data_vma = text_vma + obj_textsec (abfd)->size;
+      data_vma = (text_vma + obj_textsec (abfd)->size + TARGET_PAGE_SIZE - 1)
+		 & ~ (bfd_vma)(TARGET_PAGE_SIZE - 1);
       bss_vma  = data_vma + obj_datasec (abfd)->size;
 
       obj_textsec (abfd)->vma = text_vma;
@@ -698,14 +702,23 @@ some_plan9_object_p (bfd *abfd,
      Override with the correct Plan 9 i386 VMAs:
        text: TEXTADDR + EXEC_BYTES_SIZE = 0x1000 + 32 = 0x1020
              (header occupies 0x1000..0x101f, code starts at 0x1020)
-       data: TEXTADDR + a_text = 0x1000 + a_text
-             (Plan 9 a_text = code_size + EXEC_BYTES_SIZE, so data
-             starts at 0x1000 + code_size + 32 = 0x1020 + code_size)
+       data: page_align(TEXTADDR + a_text)
+             = (0x1000 + a_text + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
+             For a_text < 0x1000 (typical), this is always 0x2000.
+             Native Plan 9 8l maps data at the first 0x1000-page boundary
+             after text ends, matching what the kernel actually maps.
        bss:  data_vma + a_data  */
   obj_textsec (abfd)->vma = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
-  obj_datasec (abfd)->vma = (bfd_vma) TEXT_START_ADDR + execp->a_text;
-  obj_bsssec  (abfd)->vma = (bfd_vma) TEXT_START_ADDR + execp->a_text
-                             + execp->a_data;
+  {
+    bfd_vma data_vma = ((bfd_vma) TEXT_START_ADDR
+			- EXEC_BYTES_SIZE    /* = TEXTADDR = 0x1000 */
+			+ execp->a_text      /* + a_text = code_size + EXEC_BYTES_SIZE */
+			+ TARGET_PAGE_SIZE - 1)
+		       & ~ (bfd_vma)(TARGET_PAGE_SIZE - 1);
+    /* Simplified: (0x1000 + a_text + 0xfff) & ~0xfff = 0x2000 for a_text < 0x1000 */
+    obj_datasec (abfd)->vma = data_vma;
+    obj_bsssec  (abfd)->vma = data_vma + execp->a_data;
+  }
   obj_textsec (abfd)->lma = obj_textsec (abfd)->vma;
   obj_datasec (abfd)->lma = obj_datasec (abfd)->vma;
   obj_bsssec  (abfd)->lma = obj_bsssec  (abfd)->vma;

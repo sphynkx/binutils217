@@ -177,18 +177,19 @@ if { [regexp "etext" $got14] } {
 }
 
 # Test 10a: objdump -h pw must show text section at VMA 0x1020 and
-# data section at VMA 0x10da.
-# pw header: a_text=0xda, a_data=0x24.  Plan 9 native layout:
+# data section at VMA 0x2000.
+# pw header: a_text=0xda, a_data=0x24.  Plan 9 native kernel layout:
 #   text VMA = TEXTADDR + EXEC_BYTES_SIZE = 0x1000 + 32 = 0x1020
-#   data VMA = TEXTADDR + a_text = 0x1000 + 0xda = 0x10da
+#   data VMA = page_align(TEXTADDR + a_text)
+#            = (0x1000 + 0xda + 0xfff) & ~0xfff = 0x2000
+# The Plan 9 kernel maps data at the first 0x1000-aligned page boundary
+# after text ends.  For any Plan 9 executable with a_text < 0x1000
+# (all practical small programs) this is always 0x2000.
 # This verifies that our reader (some_plan9_object_p) overrides the
-# generic N_TXTADDR/N_DATADDR formulas with Plan 9-correct VMAs.
-# The same data VMA formula is used by the writer (aoutx-plan9-i386.h
-# final_link override) to ensure ABS32 data-symbol addresses match what
-# the Plan 9 kernel maps at runtime.  Before the fix, N_DATADDR would
-# return 0x1000 (non-OMAGIC page-aligned formula), causing all data
-# symbol addresses to be wrong in both read and write paths.
-send_log "Testing: objdump -h pw shows .text at VMA 0x1020 and .data at VMA 0x10da\n"
+# generic N_TXTADDR/N_DATADDR formulas with Plan 9-correct VMAs, and
+# that the linker script DATA_ALIGNMENT=ALIGN(SEGMENT_SIZE)=ALIGN(0x1000)
+# gives the correct page-aligned data placement.
+send_log "Testing: objdump -h pw shows .text at VMA 0x1020 and .data at VMA 0x2000\n"
 set got_pw_hdr [binutils_run $OBJDUMP "-h $pw_fixture"]
 
 if { [regexp {\.text[^\n]*0+1020} $got_pw_hdr] } {
@@ -198,10 +199,10 @@ if { [regexp {\.text[^\n]*0+1020} $got_pw_hdr] } {
     send_log "Output was: $got_pw_hdr\n"
 }
 
-if { [regexp {\.data[^\n]*10da} $got_pw_hdr] } {
-    pass "objdump -h pw: .data section at VMA 0x10da (correct Plan 9 data VMA)"
+if { [regexp {\.data[^\n]*2000} $got_pw_hdr] } {
+    pass "objdump -h pw: .data section at VMA 0x2000 (correct Plan 9 page-aligned data VMA)"
 } else {
-    fail "objdump -h pw: .data section NOT at VMA 0x10da -- data VMA formula may be wrong"
+    fail "objdump -h pw: .data section NOT at VMA 0x2000 -- data page-alignment formula may be wrong"
     send_log "Output was: $got_pw_hdr\n"
 }
 

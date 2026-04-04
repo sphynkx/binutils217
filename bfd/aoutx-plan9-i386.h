@@ -2371,16 +2371,17 @@ MY (final_link) (bfd *abfd,
      on-disk exec header (see MY(write_object_contents)), matching the
      Plan 9 convention where a_text = code_size + header_size.
 
-     Critical VMA correction: the linker script may page-align the data
-     section (ALIGN(0x1000)), but the Plan 9 kernel maps data at
-     TEXTADDR + a_text = 0x1000 + (text_size + EXEC_BYTES_SIZE)
-                       = 0x1020 + text_size.
+     VMA correction: the Plan 9 kernel maps text at TEXTADDR = 0x1000
+     (with the 32-byte header at 0x1000..0x101f, code at 0x1020+), and
+     maps DATA at the first 0x1000-page boundary after text ends:
+       data_VMA = (TEXTADDR + a_text + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
+               = (TEXT_START_ADDR + text_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
+     For small executables (code_size < ~0xfe0 bytes) this is always 0x2000,
+     matching the native Plan 9 8l output for the t04 test executable.
      We must set the data/bss section VMAs to these kernel-expected values
-     BEFORE relocations are applied (link_input_bfd), so that all ABS32
+     BEFORE relocations are applied (MY(link_input_bfd)), so that all ABS32
      data-symbol references in the binary get the addresses the kernel
-     will actually map at runtime.  Without this correction, data symbols
-     resolve to page-aligned addresses like 0x2000 instead of 0x10da,
-     causing write() to output garbage and subsequent crashes (pc=0x1).  */
+     will actually map at runtime.  */
   if (!info->relocatable
       && bfd_get_arch (abfd) == bfd_arch_i386)
     {
@@ -2391,11 +2392,15 @@ MY (final_link) (bfd *abfd,
       obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
       obj_textsec (abfd)->vma     = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
 
-      /* data VMA = TEXTADDR + a_text = 0x1000 + (text_size + EXEC_BYTES_SIZE)
-	 = 0x1020 + text_size.  This matches what the Plan 9 kernel maps at
-	 runtime.  Using this here (before link_input_bfd) ensures ABS32
-	 relocations produce the correct runtime addresses.  */
-      data_vma = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE + text_size;
+      /* data VMA = page-aligned (TEXTADDR + a_text)
+	 = (TEXT_START_ADDR + text_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)
+	 = (0x1000 + text_size + 0xfff) & ~0xfff  [TEXT_START_ADDR=TEXTADDR=0x1000 in bfd]
+	 For typical Plan 9 executables (text < 0xfe0 bytes) this is 0x2000.
+	 The linker script DATA_ALIGNMENT=ALIGN(SEGMENT_SIZE)=ALIGN(0x1000) produces
+	 the same result; this override ensures consistency and keeps the VMA
+	 set before MY(link_input_bfd) applies ABS32 relocations.  */
+      data_vma = ((bfd_vma) TEXT_START_ADDR + text_size + TARGET_PAGE_SIZE - 1)
+		 & ~ (bfd_vma)(TARGET_PAGE_SIZE - 1);
       obj_datasec (abfd)->vma = data_vma;
 
       bss_vma = data_vma + obj_datasec (abfd)->size;
