@@ -420,7 +420,8 @@ static CONST struct aout_backend_data MY(backend_data) = {
 	1,	/* text_includes_header */
 	0,	/* entry_is_text_address */
 	0,	/* exec_hdr_flags */
-	0x1020,	/* default_text_vma */
+	0x1000,	/* default_text_vma: with text_includes_header=1, text VMA
+		   = default_text_vma + EXEC_BYTES_SIZE = 0x1000 + 32 = 0x1020 */
 	MY_set_sizes,
 	0,	/* exec_header_not_counted */
 	0,	/* add_dynamic_symbols */
@@ -470,12 +471,11 @@ MY(write_object_contents) (bfd *abfd)
     {
       bfd_vma text_vma, data_vma, bss_vma;
 
-      text_vma = 0x1020;
-      data_vma = 0x2000;
-
-      /* Place bss after data; keep 0x1000 alignment like the rest of the format. */
-      bss_vma = data_vma + obj_datasec (abfd)->size;
-      bss_vma = (bss_vma + 0xfff) & ~((bfd_vma) 0xfff);
+      /* Plan 9 kernel maps text at TEXTADDR+EXEC_BYTES_SIZE = 0x1020 and
+	 data at TEXTADDR + a_text = 0x1020 + text_code_size (no page gap).  */
+      text_vma = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
+      data_vma = text_vma + obj_textsec (abfd)->size;
+      bss_vma  = data_vma + obj_datasec (abfd)->size;
 
       obj_textsec (abfd)->vma = text_vma;
       obj_datasec (abfd)->vma = data_vma;
@@ -691,6 +691,24 @@ some_plan9_object_p (bfd *abfd,
 	result = (*callback_to_real_object_p) (abfd);
 	if (result == NULL)
 	  return NULL;
+
+  /* The generic a.out callback uses N_TXTADDR/N_DATADDR which are
+     wrong for Plan 9 (they return 0 and 0x1000 respectively, based on
+     the generic OMAGIC/ZMAGIC rules and the 0x1eb magic).
+     Override with the correct Plan 9 i386 VMAs:
+       text: TEXTADDR + EXEC_BYTES_SIZE = 0x1000 + 32 = 0x1020
+             (header occupies 0x1000..0x101f, code starts at 0x1020)
+       data: TEXTADDR + a_text = 0x1000 + a_text
+             (Plan 9 a_text = code_size + EXEC_BYTES_SIZE, so data
+             starts at 0x1000 + code_size + 32 = 0x1020 + code_size)
+       bss:  data_vma + a_data  */
+  obj_textsec (abfd)->vma = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
+  obj_datasec (abfd)->vma = (bfd_vma) TEXT_START_ADDR + execp->a_text;
+  obj_bsssec  (abfd)->vma = (bfd_vma) TEXT_START_ADDR + execp->a_text
+                             + execp->a_data;
+  obj_textsec (abfd)->lma = obj_textsec (abfd)->vma;
+  obj_datasec (abfd)->lma = obj_datasec (abfd)->vma;
+  obj_bsssec  (abfd)->lma = obj_bsssec  (abfd)->vma;
 
   /* The generic a.out callback recalculates section file positions and
 	   obj_sym_filepos using N_SYMOFF, which does not always match the

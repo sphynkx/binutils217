@@ -82,3 +82,4 @@ binutils/strings
 binutils/strip-new
 binutils/size
 binutils/addr2line
+ldscripts/

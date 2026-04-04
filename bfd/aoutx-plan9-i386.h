@@ -2369,12 +2369,38 @@ MY (final_link) (bfd *abfd,
      obj_textsec->size stores the raw code byte count (not including the
      header); EXEC_BYTES_SIZE is added only when writing a_text to the
      on-disk exec header (see MY(write_object_contents)), matching the
-     Plan 9 convention where a_text = code_size + header_size.  */
+     Plan 9 convention where a_text = code_size + header_size.
+
+     Critical VMA correction: the linker script may page-align the data
+     section (ALIGN(0x1000)), but the Plan 9 kernel maps data at
+     TEXTADDR + a_text = 0x1000 + (text_size + EXEC_BYTES_SIZE)
+                       = 0x1020 + text_size.
+     We must set the data/bss section VMAs to these kernel-expected values
+     BEFORE relocations are applied (link_input_bfd), so that all ABS32
+     data-symbol references in the binary get the addresses the kernel
+     will actually map at runtime.  Without this correction, data symbols
+     resolve to page-aligned addresses like 0x2000 instead of 0x10da,
+     causing write() to output garbage and subsequent crashes (pc=0x1).  */
   if (!info->relocatable
       && bfd_get_arch (abfd) == bfd_arch_i386)
     {
-      obj_textsec (abfd)->size = text_size;
+      bfd_vma data_vma;
+      bfd_vma bss_vma;
+
+      obj_textsec (abfd)->size    = text_size;
       obj_textsec (abfd)->filepos = EXEC_BYTES_SIZE;
+      obj_textsec (abfd)->vma     = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE;
+
+      /* data VMA = TEXTADDR + a_text = 0x1000 + (text_size + EXEC_BYTES_SIZE)
+	 = 0x1020 + text_size.  This matches what the Plan 9 kernel maps at
+	 runtime.  Using this here (before link_input_bfd) ensures ABS32
+	 relocations produce the correct runtime addresses.  */
+      data_vma = (bfd_vma) TEXT_START_ADDR + EXEC_BYTES_SIZE + text_size;
+      obj_datasec (abfd)->vma = data_vma;
+
+      bss_vma = data_vma + obj_datasec (abfd)->size;
+      obj_bsssec (abfd)->vma = bss_vma;
+
       /* data_filepos = a_text = code_size + EXEC_BYTES_SIZE.
 	 Written explicitly as EXEC_BYTES_SIZE + text_size (= obj_textsec->size)
 	 rather than obj_textsec->filepos + obj_textsec->size to make it clear
