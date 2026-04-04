@@ -189,20 +189,20 @@ if { [regexp "etext" $got14] } {
 # return 0x1000 (non-OMAGIC page-aligned formula), causing all data
 # symbol addresses to be wrong in both read and write paths.
 send_log "Testing: objdump -h pw shows .text at VMA 0x1020 and .data at VMA 0x10da\n"
-set got14a [binutils_run $OBJDUMP "-h $pw_fixture"]
+set got_pw_hdr [binutils_run $OBJDUMP "-h $pw_fixture"]
 
-if { [regexp {\.text[^\n]*0+1020} $got14a] } {
+if { [regexp {\.text[^\n]*0+1020} $got_pw_hdr] } {
     pass "objdump -h pw: .text section at VMA 0x1020 (correct Plan 9 text VMA)"
 } else {
     fail "objdump -h pw: .text section NOT at VMA 0x1020 -- text VMA formula may be wrong"
-    send_log "Output was: $got14a\n"
+    send_log "Output was: $got_pw_hdr\n"
 }
 
-if { [regexp {\.data[^\n]*10da} $got14a] } {
+if { [regexp {\.data[^\n]*10da} $got_pw_hdr] } {
     pass "objdump -h pw: .data section at VMA 0x10da (correct Plan 9 data VMA)"
 } else {
     fail "objdump -h pw: .data section NOT at VMA 0x10da -- data VMA formula may be wrong"
-    send_log "Output was: $got14a\n"
+    send_log "Output was: $got_pw_hdr\n"
 }
 
 # -----------------------------------------------------------------------

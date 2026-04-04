@@ -420,8 +420,8 @@ static CONST struct aout_backend_data MY(backend_data) = {
 	1,	/* text_includes_header */
 	0,	/* entry_is_text_address */
 	0,	/* exec_hdr_flags */
-	0x1000,	/* default_text_vma: with text_includes_header=1, text VMA
-		   = default_text_vma + EXEC_BYTES_SIZE = 0x1000 + 32 = 0x1020 */
+	0x1000,	/* default_text_vma: with text_includes_header=1, effective text VMA
+		   = default_text_vma + EXEC_BYTES_SIZE = TEXT_START_ADDR + 0x20 = 0x1020 */
 	MY_set_sizes,
 	0,	/* exec_header_not_counted */
 	0,	/* add_dynamic_symbols */
