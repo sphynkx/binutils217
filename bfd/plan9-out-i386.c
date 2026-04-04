@@ -2838,20 +2838,29 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
       return 1;
     }
 
-  /* ---- Tail-call optimization: CALL → JMP at function end ---- */
-  /* Plan 9's native linker (8l) converts the last CALL in a function body
-     to a fall-through (no instruction) when the callee is the immediately
-     following function, or to a JMP otherwise.  Without this, startup
-     functions like _main (autosize=0) that end with CALL _callmain push an
-     extra return address on the stack, shifting _callmain's D_PARAM offsets
-     by 4 and causing the wrong argument to be loaded as the function pointer
-     (EAX becomes 0, so CALL *EAX faults at pc=0x1 on native Plan 9).
-     Fix: replace CALL→JMP for any direct CALL that is the last real
-     instruction in its function.  A function ends when the next progs_all
-     entry is P9AS_TEXT (new function start), P9AS_ADJSP (the synthetic
-     frame-setup always immediately follows P9AS_TEXT), or end-of-array.
-     Both CALL and JMP to EXTERN use 5 bytes (E8/E9 + rel32), so the span
-     sizes are unchanged. */
+  /* ---- Tail-call optimization: CALL → JMP for Plan 9 startup ---- */
+  /* Plan 9's _main startup function ends with CALL _callmain after pushing a
+     fake $0 return address onto the stack.  Without converting this CALL to
+     JMP, the real CALL instruction pushes a second return address that shifts
+     _callmain's D_PARAM[0] (fn_ptr) by 4: EAX becomes 0, CALL *EAX faults
+     at pc=0x1 on native Plan 9.
+     With JMP (no return-address push), the earlier PUSHL $0 already sits at
+     [esp+0] and main_ptr at [esp+4], so after _callmain's SUB $0x50,%esp the
+     D_PARAM offsets are correct.
+     Critically, this conversion must ONLY apply to the specific startup
+     pattern and NOT to ordinary functions like write() that end with
+     CALL pwrite().  For ordinary functions the callee relies on the return
+     address pushed by CALL; converting to JMP makes the callee's RET pop an
+     argument value (e.g. fd=1) as the return address, sending PC to 0x1.
+     The startup pattern is identified by two conditions:
+       1. The containing function has auto_size == 0 (no local frame), found
+          by scanning back to the nearest P9AS_TEXT record's to.offset.
+       2. The immediately preceding instruction is PUSHL $0, i.e. a PUSHL
+          whose source is a P9D_CONST with offset == 0 and no symbol.
+          This is the fake return-address slot that _main explicitly pushes
+          before jumping to _callmain.
+     Both CALL and JMP to EXTERN use 5 bytes (E8/E9 + rel32), so span sizes
+     are unchanged by the substitution. */
   for (i = 0; i < nprogs_all; i++)
     {
       if (progs_all[i].as == P9AS_CALL
@@ -2866,7 +2875,40 @@ p9obj_encode_file (bfd *abfd, asection *text_sec ATTRIBUTE_UNUSED,
           if (next >= nprogs_all
               || progs_all[next].as == P9AS_TEXT
               || progs_all[next].as == P9AS_ADJSP)
-            progs_all[i].as = P9AS_JMP;
+            {
+              /* Additional guard: only convert when this is the startup
+                 CALL→JMP pattern (auto_size==0 + preceding PUSHL $0).
+                 Ordinary last CALLs (e.g. write→pwrite) must stay as CALL
+                 so the callee receives a valid return address on the stack. */
+              int ok_for_jmp = 0;
+
+              /* Condition 2: preceding instruction is PUSHL $0 */
+              if (i > 0 && progs_all[i-1].as == P9AS_PUSHL)
+                {
+                  const p9_Adr *fa = &progs_all[i-1].from;
+                  if (fa->type == P9D_CONST
+                      && fa->offset == 0
+                      && fa->sym < 0
+                      && fa->index == P9D_NONE)
+                    {
+                      /* Condition 1: scan back to find containing TEXT record
+                         and verify its auto_size (to.offset) is 0. */
+                      int j;
+                      for (j = i - 2; j >= 0; j--)
+                        {
+                          if (progs_all[j].as == P9AS_TEXT)
+                            {
+                              if (progs_all[j].to.offset == 0)
+                                ok_for_jmp = 1;
+                              break;
+                            }
+                        }
+                    }
+                }
+
+              if (ok_for_jmp)
+                progs_all[i].as = P9AS_JMP;
+            }
         }
     }
 

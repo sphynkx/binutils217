@@ -932,3 +932,78 @@ if { [regexp {ff\s*d[012]} $got15] } {
     send_log "objdump -d output was:\n$got15\n"
 }
 
+
+# -----------------------------------------------------------------------
+# Tests 51-54: CALL→JMP conversion narrowing (startup pattern guard).
+#
+# The CALL→JMP tail-call conversion must ONLY fire for the Plan 9 startup
+# pattern: a function with auto_size==0 whose last instruction is preceded
+# by PUSHL $0 (the fake return address _main pushes for _callmain).
+#
+# Without this guard, functions like write() that end with CALL pwrite()
+# (the last instruction before AEND in the object file) would be wrongly
+# converted to JMP pwrite().  That JMP omits the CPU's automatic return-
+# address push, so pwrite()'s RET pops the fd argument (value 1) as the
+# return address, sending PC to 0x1 → "fault read addr=0x1 pc=0x1" on
+# native Plan 9.
+#
+# Test 51: main9.8 must contain "6a 00" at offset 0x0c.
+# 6a 00 = PUSH $0x0 (the fake return address that enables the JMP conversion
+# for the _main→_callmain startup tail-call).
+send_log "Testing: main9.8 has 'push \$0x0' (6a 00) at offset 0x0c (startup fake retaddr)\n"
+set got_main9_d [binutils_run $OBJDUMP "-d $main9_fixture"]
+if { [regexp {\sc:\s+6a\s+00\s} $got_main9_d] || [regexp {0x0c:\s+6a\s+00} $got_main9_d] } {
+    pass "main9.8 has 'push \$0x0' (6a 00) at offset 0x0c -- startup fake return address present"
+} else {
+    fail "main9.8 missing 'push \$0x0' (6a 00) at offset 0x0c -- startup pattern broken"
+    send_log "objdump -d output was:\n$got_main9_d\n"
+}
+
+# Test 52: main9.8 must contain "push %eax" (50) at offset 0x0b.
+# This pushes the main() function pointer before the fake $0 return address.
+send_log "Testing: main9.8 has 'push %%eax' (50) at offset 0x0b (main() function pointer)\n"
+if { [regexp {\sb:\s+50\s} $got_main9_d] || [regexp {0x0b:\s+50\s} $got_main9_d] } {
+    pass "main9.8 has 'push %%eax' (50) at offset 0x0b -- main() fn-ptr pushed before fake retaddr"
+} else {
+    fail "main9.8 missing 'push %%eax' (50) at offset 0x0b -- startup pattern wrong"
+    send_log "objdump -d output was:\n$got_main9_d\n"
+}
+
+# -----------------------------------------------------------------------
+# Tests 53-54: write_stub.8 -- a function ending with CALL (not JMP).
+#
+# write_stub.8 is a synthetic Plan 9 .8 file with:
+#   TEXT write+0(SB), $0    ; auto_size=0 (same as _main)
+#   PUSHL AX                ; push fd register (NOT PUSHL $0!)
+#   CALL pwrite(SB)         ; last instruction in the file (before AEND)
+#
+# The CALL pwrite is the last instruction (next entry is AEND = end-of-file),
+# identical to how _main ends with CALL _callmain.  But because the preceding
+# instruction is PUSHL AX (not PUSHL $0), the startup pattern guard must
+# prevent the CALL→JMP conversion.
+# -----------------------------------------------------------------------
+set write_stub_fixture "$testdir/write_stub.8"
+set got_write_stub [binutils_run $OBJDUMP "-d $write_stub_fixture"]
+
+# Test 53: write_stub.8 must be recognised as plan9-out-i386.
+send_log "Testing: objdump -f recognizes write_stub.8 as plan9-out-i386\n"
+set got_ws_fmt [binutils_run $OBJDUMP "-f $write_stub_fixture"]
+if { [regexp -nocase {plan9-out-i386|plan9.*i386|i386.*plan9} $got_ws_fmt] } {
+    pass "objdump -f recognizes write_stub.8 as plan9-out-i386"
+} else {
+    fail "objdump -f does not recognize write_stub.8 as plan9-out-i386"
+    send_log "objdump -f output was:\n$got_ws_fmt\n"
+}
+
+# Test 54: write_stub.8 CALL pwrite must be encoded as E8 (direct CALL), NOT E9 (JMP).
+# The preceding PUSHL AX (not PUSHL $0) disqualifies the startup-pattern guard,
+# so the CALL must remain a CALL even though it is the last instruction in the file.
+# If this test fails, the CALL→JMP conversion is too aggressive and would produce
+# the "fault read addr=0x1 pc=0x1" crash on native Plan 9.
+send_log "Testing: write_stub.8 CALL pwrite stays as E8 (not E9) -- no spurious CALL→JMP\n"
+if { [regexp {\se8\s} $got_write_stub] && ![regexp {\se9\s} $got_write_stub] } {
+    pass "write_stub.8 CALL pwrite encoded as E8 (not E9) -- startup guard correct"
+} else {
+    fail "write_stub.8 CALL pwrite wrong encoding (expected E8 CALL, not E9 JMP)"
+    send_log "objdump -d output was:\n$got_write_stub\n"
+}
